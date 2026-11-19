@@ -3,7 +3,8 @@ import {
   ArrowDown, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3,
   Check, ChevronRight, CircleAlert, Disc3, ExternalLink, GlassWater,
   Images, MapPin, Menu, Mic2, MousePointer2, Music2, Navigation,
-  Share2, Sparkles, UtensilsCrossed, Vote, X
+  Share2, Sparkles, UtensilsCrossed, Vote, X, Trophy, LockKeyhole,
+  ChevronLeft, ChevronRight, ShieldCheck, Flame, Eye, CalendarClock
 } from 'lucide-react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -16,7 +17,7 @@ const bars = venueData.filter(v => v.category === 'bars');
 const burgers = venueData.filter(v => v.category === 'burgers');
 const emptyResults = {
   counts: Object.fromEntries(venueData.map(item => [item.id, 0])),
-  totals: { bars: 0, burgers: 0 }
+  totals: { bars: 0, burgers: 0 }, round: 1, phase: 'open', finalists: { bars: [], burgers: [] }, firstRound: null
 };
 const mapsLink = venue => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${venue.name}, ${venue.address}`)}`;
 const mapEmbed = venue => `https://www.google.com/maps?q=${encodeURIComponent(`${venue.name}, ${venue.address}`)}&output=embed`;
@@ -139,7 +140,7 @@ function ImageCredit({ google, venue }) {
   return <span className="photo-credit">Fotos via Google Places{authors.length ? ' · ' : ''}{authors.map((a, i) => <React.Fragment key={a.name}>{i > 0 && ', '}{a.url ? <a href={a.url} target="_blank" rel="noreferrer">{a.name}</a> : a.name}</React.Fragment>)}</span>;
 }
 
-function VenueDetails({ venue, category, onVote, google, compact = false }) {
+function VenueDetails({ venue, category, onVote, google, compact = false, eligibility = true, voted = false, onVoteLabel }) {
   return <div className={`venue-details ${compact ? 'venue-details--compact' : ''}`}>
     <div className="venue-eyebrow"><span className="eyebrow-dot" style={{ background: venue.accent }} />{venue.type}</div>
     <h3>{venue.name}</h3>
@@ -148,8 +149,8 @@ function VenueDetails({ venue, category, onVote, google, compact = false }) {
     <div className="tag-set">{venue.details.map(tag => <span key={tag}>{tag}</span>)}</div>
     {venue.notice && <div className="venue-notice"><CircleAlert size={15} />{venue.notice}</div>}
     <div className="venue-actions">
-      <button className="button button--lime" onClick={() => onVote(venue)} disabled={!venue.enabled}>
-        <Vote size={17} />{venue.enabled ? 'Votar neste lugar' : 'Indisponível'}<ArrowUpRight size={17} />
+      <button className="button button--lime" onClick={() => onVote(venue)} disabled={!venue.enabled || !eligibility}>
+        <Vote size={17} />{!venue.enabled ? 'Indisponível' : !eligibility ? 'Fora da final' : voted ? 'Alterar meu voto' : onVoteLabel || 'Votar neste lugar'}<ArrowUpRight size={17} />
       </button>
       <a className="button button--outline" href={google?.googleMapsUrl || mapsLink(venue)} target="_blank" rel="noreferrer"><Navigation size={17} />Traçar rota</a>
     </div>
@@ -173,66 +174,198 @@ function LocationPanel({ venue, google, mobile = false }) {
   </div>;
 }
 
-function MobileVenueCard({ venue, index, config, onVote }) {
+function MobileVenueCard({ venue, index, total, config, onVote, election, chosen }) {
   const ref = useRef(null);
   const google = useGooglePhoto(venue.id, config.googlePhotosEnabled, ref);
   return <article ref={ref} className="mobile-story-card" style={{ '--venue-accent': venue.accent }}>
     <div className="mobile-story-card__image">
       <VenueImg src={google?.photos?.[0]?.src} fallback={venue.images[0]} alt={`Ambiente de ${venue.name}`} />
-      <div className="mobile-story-card__number">0{index + 1} / 05</div>
+      <div className="mobile-story-card__number">0{index + 1} / 0{total} · {election.round === 2 ? 'GRANDE FINAL' : '1º TURNO'}</div>
     </div>
-    <div className="mobile-story-card__body"><VenueDetails venue={venue} onVote={onVote} compact /></div>
+    <div className="mobile-story-card__body"><VenueDetails venue={venue} onVote={onVote} compact eligibility={election.phase === 'open'} voted={chosen === venue.id} /></div>
     <details className="mobile-story-card__map"><summary>Ver localização e fotos <ChevronRight size={18} /></summary><LocationPanel venue={venue} google={google} mobile /></details>
   </article>;
 }
 
-function StorySection({ category, items, config, onVote }) {
-  const ref = useRef(null);
-  const [active, setActive] = useState(0);
-  const current = items[active];
-  const google = useGooglePhoto(current.id, config.googlePhotosEnabled);
+function StageOrbit({ accent }) {
+  const holder = useRef(null);
   useEffect(() => {
-    if (!ref.current) return;
+    const element = holder.current;
+    if (!element || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let renderer;
+    try { renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' }); }
+    catch { return; }
+    renderer.setPixelRatio(Math.min(1.3, window.devicePixelRatio));
+    renderer.setClearColor(0x000000, 0);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+    camera.position.z = 14;
+    const group = new THREE.Group(); scene.add(group);
+    const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xc9f775, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
+    const mistMaterial = new THREE.MeshBasicMaterial({ color: 0x9885ff, wireframe: true, transparent: true, opacity: 0.13 });
+    for (let index = 0; index < 5; index++) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.7 + index * 0.27, index % 2 ? 0.016 : 0.028, 8, 150), ringMaterial);
+      ring.rotation.x = index * 0.48 + 0.35;
+      ring.rotation.y = index * 0.66;
+      group.add(ring);
+    }
+    const poly = new THREE.Mesh(new THREE.IcosahedronGeometry(3.3, 1), mistMaterial);
+    group.add(poly);
+    const position = new Float32Array(480 * 3);
+    for (let n = 0; n < 480; n++) {
+      const theta = Math.random() * Math.PI * 2;
+      const y = Math.random() * 2 - 1;
+      const radius = 4 + Math.random() * 3;
+      position[n * 3] = radius * Math.sqrt(1 - y * y) * Math.cos(theta);
+      position[n * 3 + 1] = radius * y;
+      position[n * 3 + 2] = radius * Math.sqrt(1 - y * y) * Math.sin(theta);
+    }
+    const starsGeometry = new THREE.BufferGeometry();
+    starsGeometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    const starsMaterial = new THREE.PointsMaterial({ color: 0xf4e9ff, size: 0.026, transparent: true, opacity: 0.53 });
+    const stars = new THREE.Points(starsGeometry, starsMaterial); scene.add(stars);
+    const resize = () => {
+      const rect = element.getBoundingClientRect();
+      renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height));
+      camera.aspect = Math.max(1, rect.width) / Math.max(1, rect.height); camera.updateProjectionMatrix();
+    };
+    element.appendChild(renderer.domElement);
+    const resizeObserver = new ResizeObserver(resize); resizeObserver.observe(element); resize();
+    let frame; let visible = false;
+    const observer = new IntersectionObserver(entries => { visible = entries.some(e => e.isIntersecting); }, { threshold: 0.01 });
+    observer.observe(element);
+    let last = 0;
+    const animate = timestamp => {
+      if (visible && timestamp - last >= 30) {
+        group.rotation.y += 0.0013; group.rotation.x = Math.sin(timestamp * 0.00013) * 0.13;
+        poly.rotation.y = timestamp * 0.00008; stars.rotation.y = -timestamp * 0.000012;
+        renderer.render(scene, camera); last = timestamp;
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => {
+      cancelAnimationFrame(frame); observer.disconnect(); resizeObserver.disconnect();
+      group.traverse(obj => obj.geometry?.dispose());
+      starsGeometry.dispose(); ringMaterial.dispose(); mistMaterial.dispose(); starsMaterial.dispose(); renderer.dispose();
+      renderer.domElement.remove();
+    };
+  }, []);
+  useEffect(() => {
+    const canvas = holder.current?.querySelector('canvas');
+    if (canvas) canvas.style.filter = `drop-shadow(0 0 35px ${accent}40)`;
+  }, [accent]);
+  return <div className="stage-orbit" aria-hidden="true" ref={holder} />;
+}
+
+function SpotlightCard({ venue, index, total, onVote, google, canVote, chosen, round }) {
+  const visual = useRef(null);
+  const tilt = event => {
+    if (!visual.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const bounds = visual.current.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) / bounds.width - 0.5;
+    const y = (event.clientY - bounds.top) / bounds.height - 0.5;
+    visual.current.style.setProperty('--tilt-x', `${(-y * 11).toFixed(2)}deg`);
+    visual.current.style.setProperty('--tilt-y', `${(x * 13).toFixed(2)}deg`);
+    visual.current.style.setProperty('--glow-x', `${(x + 0.5) * 100}%`);
+    visual.current.style.setProperty('--glow-y', `${(y + 0.5) * 100}%`);
+  };
+  const leave = () => {
+    if (!visual.current) return;
+    visual.current.style.setProperty('--tilt-x', '0deg');
+    visual.current.style.setProperty('--tilt-y', '0deg');
+  };
+  return <div className="spotlight-wrap" style={{ '--venue-accent': venue.accent }}>
+    <div className="spotlight-beam" aria-hidden="true" />
+    <div className="spotlight-visual" ref={visual} onPointerMove={tilt} onPointerLeave={leave}>
+      <div className="spotlight-visual__frame" />
+      <div className="spotlight-visual__photo"><VenueImg src={google?.photos?.[0]?.src} fallback={venue.images[0]} alt={`Ambiente de ${venue.name}`} /></div>
+      <div className="spotlight-visual__shade" />
+      <div className="spotlight-visual__shine" />
+      <div className="spotlight-visual__top"><span>AFTERHOURS / DESTINATION</span><span>{round === 2 ? 'THE FINAL' : 'CHAPTER 01'}</span></div>
+      <div className="spotlight-visual__number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div>
+      <div className="spotlight-visual__bottom"><span className="spotlight-visual__location"><MapPin size={14} />{venue.neighborhood}</span><h3>{venue.name}</h3><p>{venue.tagline}</p></div>
+      <div className="spotlight-visual__ticket"><span>{round === 2 ? 'FINALISTA' : 'ESCOLHA DO TIME'}</span><strong>{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</strong></div>
+    </div>
+    <div className="spotlight-reflection" aria-hidden="true" />
+    <button className="spotlight-floating-vote" disabled={!canVote || !venue.enabled} onClick={() => onVote(venue)}><Vote size={19} />{!venue.enabled ? 'Indisponível' : !canVote ? 'Votação encerrada' : chosen === venue.id ? 'SEU VOTO · ALTERAR' : 'VOTAR NESSE LUGAR'}<ArrowUpRight size={18}/></button>
+  </div>;
+}
+
+function StorySection({ category, items, config, onVote, election, chosen }) {
+  const trackRef = useRef(null);
+  const visualRef = useRef(null);
+  const [active, setActive] = useState(0);
+  const round = election.round || 1;
+  const available = round === 2 ? items.filter(v => election.finalists?.[category]?.includes(v.id)) : items;
+  const visibleItems = available.length ? available : items;
+  const current = visibleItems[Math.min(active, visibleItems.length - 1)];
+  const currentIndex = Math.min(active, visibleItems.length - 1);
+  const google = useGooglePhoto(current.id, config.googlePhotosEnabled);
+  useEffect(() => { setActive(0); }, [round, category]);
+  useEffect(() => {
+    const element = trackRef.current;
+    if (!element) return;
     const mm = gsap.matchMedia();
     mm.add('(min-width: 901px)', () => {
       const trigger = ScrollTrigger.create({
-        trigger: ref.current, start: 'top top', end: 'bottom bottom',
+        trigger: element, start: 'top top', end: 'bottom bottom',
         onUpdate: self => {
-          const index = Math.min(items.length - 1, Math.max(0, Math.floor(self.progress * items.length)));
-          setActive(prev => prev === index ? prev : index);
+          const index = Math.min(visibleItems.length - 1, Math.max(0, Math.floor(self.progress * visibleItems.length)));
+          setActive(previous => previous === index ? previous : index);
+          element.style.setProperty('--scroll-progress', `${self.progress * 100}%`);
         }
       });
       return () => trigger.kill();
     });
     return () => mm.revert();
-  }, [items]);
+  }, [round, category, visibleItems.length]);
+  useEffect(() => {
+    if (!visualRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    gsap.fromTo(visualRef.current, { opacity: 0, rotateY: 19, rotateX: -7, y: 40, scale: 0.85 },
+      { opacity: 1, rotateY: 0, rotateX: 0, y: 0, scale: 1, duration: 0.82, ease: 'power3.out', clearProps: 'transform,opacity' });
+  }, [current.id]);
+  const navigateTo = next => {
+    const track = trackRef.current;
+    if (!track) return;
+    const amount = Math.max(0, track.offsetHeight - window.innerHeight);
+    const top = track.getBoundingClientRect().top + window.scrollY;
+    const fraction = (next + 0.38) / visibleItems.length;
+    window.scrollTo({ top: top + amount * fraction, behavior: 'smooth' });
+  };
   const isBar = category === 'bars';
   const title = isBar ? 'A NOITE TEM' : 'O RODÍZIO TEM';
   const highlight = isBar ? 'VÁRIOS RITMOS.' : 'VÁRIAS CAMADAS.';
   const bg = google?.photos?.[0]?.src || current.images[0];
-  return <section id={category} ref={ref} className={`story-section story-section--${category}`}>
-    <div className="story-mobile-heading"><div className="section-kicker">0{isBar ? 1 : 2} / EXPLORAR</div><h2>{title}<br/><em>{highlight}</em></h2><p>{isBar ? 'Cinco jeitos de transformar uma sexta comum em história.' : 'Cinco rodízios para quem acredita no poder do repeteco.'}</p></div>
-    <div className="story-track">
+  const canVote = election.phase === 'open';
+  return <section id={category} className={`story-section story-section--${category}`}>
+    <div className="story-mobile-heading"><div className="section-kicker">0{isBar ? 1 : 2} / {round === 2 ? 'FINALISTAS' : 'EXPLORAR'}</div><h2>{title}<br/><em>{highlight}</em></h2><p>{round === 2 ? 'Agora o confronto é direto: dois finalistas, um vencedor.' : isBar ? 'Cinco experiências diferentes. Uma escolha para o time.' : 'Cinco opções para encontrar o rodízio favorito.'}</p></div>
+    <div className="story-track" ref={trackRef} style={{ height: `${visibleItems.length * 108}vh` }}>
       <div className="story-stage" style={{ '--venue-accent': current.accent }}>
         <div className="story-background"><VenueImg key={current.id} src={bg} fallback={current.images[0]} alt="" /><div className="story-backdrop-overlay" /></div>
+        <StageOrbit accent={current.accent}/>
         <div className="stage-shell">
-          <div className="stage-top"><span className="section-kicker">{isBar ? '01' : '02'} / {isBar ? 'BARES & EXPERIÊNCIAS' : 'HAMBURGUERIAS & RODÍZIOS'}</span><div className="stage-counter"><strong>0{active + 1}</strong><span>/ 05</span></div></div>
-          <div className="stage-content">
+          <div className="stage-top"><span className="section-kicker">{isBar ? '01 / BARES & EXPERIÊNCIAS' : '02 / HAMBURGUERIAS & RODÍZIOS'} <span className="round-stage-tag">· {round}º TURNO</span></span><div className="stage-counter"><strong>0{currentIndex + 1}</strong><span>/ 0{visibleItems.length}</span></div></div>
+          <div className="stage-content stage-content--cinematic">
             <div className="stage-main" key={`main-${current.id}`}>
-              <div className="stage-intro"><span className="tiny-plus">+</span> {title} <br/><em>{highlight}</em></div>
-              <VenueDetails venue={current} category={category} onVote={onVote} google={google} />
+              <span className="stage-mini-label"><span className="live-dot"/> SCROLL / EXPLORE / VOTE</span>
+              <div className="stage-intro"><span className="tiny-plus">+</span> {title}<br/><em>{highlight}</em></div>
+              <p className="stage-subtitle">{round === 2 ? 'O segundo turno começou. Seu voto decide a final.' : 'Cada ambiente é um universo. Entre, explore e escolha.'}</p>
+              <VenueDetails venue={current} category={category} onVote={onVote} google={google} eligibility={canVote} voted={chosen === current.id}/>
             </div>
-            <div className="stage-side" key={`side-${current.id}`}><LocationPanel venue={current} google={google} /></div>
+            <div className="stage-center" ref={visualRef} key={`visual-${current.id}`}><SpotlightCard venue={current} index={currentIndex} total={visibleItems.length} onVote={onVote} google={google} canVote={canVote} chosen={chosen} round={round}/></div>
+            <div className="stage-side" key={`side-${current.id}`}><LocationPanel venue={current} google={google}/></div>
           </div>
-          <div className="stage-bottom"><div className="stage-steps">{items.map((item, i) => <span key={item.id} className={i === active ? 'is-active' : ''} style={{ '--i': i }}><b>0{i + 1}</b><span /></span>)}</div><span className="scroll-label"><MousePointer2 size={15} /> ROLE PARA EXPLORAR</span></div>
+          <div className="stage-bottom stage-bottom--cinematic"><div className="story-switcher"><button type="button" onClick={() => navigateTo(currentIndex - 1)} disabled={currentIndex === 0} aria-label="Lugar anterior"><ChevronLeft size={22}/></button><div className="stage-steps" aria-label="Selecionar estabelecimento">{visibleItems.map((item, i) => <button type="button" aria-label={`Ver ${item.name}`} onClick={() => navigateTo(i)} key={item.id} className={i === currentIndex ? 'is-active' : ''} style={{ '--i': i }}><b>0{i + 1}</b><span /></button>)}</div><button type="button" onClick={() => navigateTo(currentIndex + 1)} disabled={currentIndex === visibleItems.length - 1} aria-label="Próximo lugar"><ChevronRight size={22}/></button></div><span className="scroll-label"><MousePointer2 size={15}/> DESLIZE A NOITE PARA A PRÓXIMA EXPERIÊNCIA</span></div>
+          <div className="stage-progress" aria-hidden="true"><div /></div>
         </div>
       </div>
     </div>
-    <div className="mobile-stories">{items.map((venue, i) => <MobileVenueCard key={venue.id} venue={venue} index={i} config={config} onVote={onVote} />)}</div>
+    <div className="mobile-stories">{visibleItems.map((venue, index) => <MobileVenueCard key={venue.id} venue={venue} index={index} total={visibleItems.length} config={config} onVote={onVote} election={election} chosen={chosen}/>)}</div>
   </section>;
 }
 
-function VoteModal({ venue, onClose, onComplete, config }) {
+function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
   const [email, setEmail] = useState(() => localStorage.getItem('afterhours-email') || '');
   const [name, setName] = useState(() => localStorage.getItem('afterhours-name') || '');
   const [code, setCode] = useState('');
@@ -240,6 +373,7 @@ function VoteModal({ venue, onClose, onComplete, config }) {
   const [error, setError] = useState('');
   useEffect(() => {
     if (!venue) return;
+    setError('');
     const onEsc = e => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onEsc);
     const oldOverflow = document.body.style.overflow;
@@ -260,50 +394,96 @@ function VoteModal({ venue, onClose, onComplete, config }) {
       if (!response.ok) throw new Error(payload.error || 'Não foi possível registrar o voto.');
       localStorage.setItem('afterhours-email', email.trim());
       localStorage.setItem('afterhours-name', name.trim());
-      localStorage.setItem(`afterhours-choice-${venue.category}`, venue.id);
-      onComplete(venue, payload.results);
+      localStorage.setItem(`afterhours-choice-r${payload.round}-${venue.category}`, venue.id);
+      onComplete(venue, payload.results, payload.round);
     } catch (e) { setError(e.message); }
     finally { setSending(false); }
   }
   return <div className="dialog-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="vote-dialog" role="dialog" aria-modal="true" aria-labelledby="vote-dialog-title">
-      <button className="dialog-close" aria-label="Fechar" onClick={onClose}><X size={22} /></button>
-      <div className="dialog-eyebrow"><span className="live-dot" /> SUA ESCOLHA IMPORTA</div>
-      <h2 id="vote-dialog-title">É esse o <em>rolê?</em></h2>
-      <div className="chosen-venue"><VenueImg src={venue.images[0]} fallback={venue.images[1]} alt={venue.name} /><div><span>{venue.category === 'bars' ? 'BAR' : 'HAMBURGUERIA'} SELECIONADO</span><strong>{venue.name}</strong><small><MapPin size={12}/>{venue.neighborhood}</small></div><Check size={22} /></div>
+      <button className="dialog-close" aria-label="Fechar" onClick={onClose}><X size={22}/></button>
+      <div className="dialog-eyebrow"><span className="live-dot"/> {election.round}º TURNO · SUA ESCOLHA</div>
+      <h2 id="vote-dialog-title">Seu voto.<br/><em>Seu rolê.</em></h2>
+      <div className="chosen-venue"><VenueImg src={venue.images[0]} fallback={venue.images[1]} alt={venue.name}/><div><span>{venue.category === 'bars' ? 'BAR' : 'HAMBURGUERIA'} SELECIONADO</span><strong>{venue.name}</strong><small><MapPin size={12}/>{venue.neighborhood}</small></div><Check size={22}/></div>
+      <div className="dialog-progress"><span>{election.round === 1 ? 'PRIMEIRO TURNO · 2 SEGMENTOS OBRIGATÓRIOS' : 'GRANDE FINAL · NOVO VOTO NOS DOIS SEGMENTOS'}</span><div><span className={progress.bars ? 'is-complete' : ''}>01 BAR {progress.bars ? '✓' : ''}</span><span className={progress.burgers ? 'is-complete' : ''}>02 HAMBURGUERIA {progress.burgers ? '✓' : ''}</span></div></div>
       <form onSubmit={submit} className="vote-form">
         <label>Seu nome<input autoFocus value={name} onChange={e => setName(e.target.value)} type="text" maxLength={60} placeholder="Como podemos te chamar?" required /></label>
-        <label>E-mail para validar um voto por pessoa<input value={email} onChange={e => setEmail(e.target.value)} type="email" maxLength={150} placeholder="voce@empresa.com" required /></label>
-        {config.requiresAccessCode && <label>Código de acesso do time<input value={code} onChange={e => setCode(e.target.value)} type="password" maxLength={80} placeholder="Código compartilhado com o time" required /></label>}
-        {error && <p className="form-error" role="alert"><CircleAlert size={15} />{error}</p>}
-        <button className="button button--lime button--submit" type="submit" disabled={sending}>{sending ? 'Registrando...' : 'Confirmar meu voto'} <ArrowUpRight size={18} /></button>
+        <label>Seu e-mail<input value={email} onChange={e => setEmail(e.target.value)} type="email" maxLength={150} placeholder="voce@empresa.com" required /></label>
+        {config.requiresAccessCode && <label>Código do time<input value={code} onChange={e => setCode(e.target.value)} type="password" maxLength={80} placeholder="Código compartilhado com o time" required /></label>}
+        {error && <p className="form-error" role="alert"><CircleAlert size={15}/>{error}</p>}
+        <button className="button button--lime button--submit" type="submit" disabled={sending || election.phase !== 'open'}>{sending ? 'Registrando...' : `Confirmar voto · ${election.round}º turno`}<ArrowUpRight size={18}/></button>
       </form>
-      <p className="dialog-note">1 voto por e-mail em cada segmento. Você pode alterar sua escolha. O e-mail é transformado em um identificador criptográfico e não é exibido no placar.</p>
+      <p className="dialog-note">Use sempre o mesmo e-mail nos dois segmentos e nos dois turnos. O primeiro turno permanece salvo separadamente. A votação utiliza hash do e-mail, sem confirmação de posse.</p>
     </div>
   </div>;
 }
 
-function ResultsPanel({ category, items, results, onVote }) {
+function ResultsPanel({ category, items, results, onVote, chosen }) {
   const total = results?.totals?.[category] || 0;
-  const ordered = [...items].sort((a, b) => (results?.counts?.[b.id] || 0) - (results?.counts?.[a.id] || 0));
+  const options = results.round === 2 ? items.filter(v => results.finalists?.[category]?.includes(v.id)) : items;
+  const ordered = [...options].sort((a, b) => (results?.counts?.[b.id] || 0) - (results?.counts?.[a.id] || 0));
+  const archive = results.round === 2 ? [...items].sort((a,b) => (results.firstRound?.counts?.[b.id]||0)-(results.firstRound?.counts?.[a.id]||0)) : [];
   return <div className={`result-panel result-panel--${category}`}>
-    <div className="result-panel__head"><span className="result-panel__icon">{category === 'bars' ? <Music2 size={20} /> : <UtensilsCrossed size={20} />}</span><div><span className="eyebrow">{category === 'bars' ? 'SEGMENTO 01' : 'SEGMENTO 02'}</span><h3>{category === 'bars' ? 'Bares' : 'Hamburguerias'}</h3></div><div className="result-votes"><strong>{total}</strong><span>votos</span></div></div>
+    <div className="result-panel__head"><span className="result-panel__icon">{category === 'bars' ? <Music2 size={20}/> : <UtensilsCrossed size={20}/>}</span><div><span className="eyebrow">{results.round === 2 ? 'GRANDE FINAL' : category === 'bars' ? 'SEGMENTO 01' : 'SEGMENTO 02'}</span><h3>{category === 'bars' ? 'Bares' : 'Hamburguerias'}</h3></div><div className="result-votes"><strong>{total}</strong><span>votos</span></div></div>
     <div className="result-rows">{ordered.map((venue, idx) => {
       const count = results?.counts?.[venue.id] || 0;
       const pct = total ? Math.round(count / total * 100) : 0;
       return <div key={venue.id} className={`result-row ${!venue.enabled ? 'result-row--disabled' : ''}`}>
-        <div className="result-row__top"><div className="result-row__name"><span className="result-position">{String(idx + 1).padStart(2, '0')}</span><span>{venue.name}</span>{!venue.enabled && <small>Indisponível</small>}</div><span className="result-row__pct">{pct}% <small>({count})</small></span></div>
-        <div className="result-track"><div style={{ width: `${pct}%` }} /></div>
+        <div className="result-row__top"><div className="result-row__name"><span className="result-position">{String(idx + 1).padStart(2, '0')}</span><span>{venue.name}</span>{chosen === venue.id ? <small>SEU VOTO</small> : !venue.enabled ? <small>Indisponível</small> : null}</div><span className="result-row__pct">{pct}% <small>({count})</small></span></div>
+        <div className="result-track"><div style={{ width: `${pct}%` }}/></div>
       </div>;
     })}</div>
-    <button className="panel-secondary-action" onClick={() => onVote(ordered.find(v => v.enabled) || items[0])}>Votar em {category === 'bars' ? 'um bar' : 'uma hamburgueria'} <ArrowUpRight size={17}/></button>
+    {results.round === 2 && <details className="results-archive"><summary>Ver apuração do 1º turno <ChevronRight size={16}/></summary>{archive.map(venue => <p key={venue.id}><span>{venue.name}</span><b>{results.firstRound?.counts?.[venue.id] || 0} voto(s)</b></p>)}</details>}
+    {results.phase === 'open' && <button className="panel-secondary-action" onClick={() => onVote(ordered.find(v => v.enabled) || items[0])}>Votar em {category === 'bars' ? 'um bar' : 'uma hamburgueria'} <ArrowUpRight size={17}/></button>}
   </div>;
 }
 
+function VotingJourney({ results, progress, onNavigate }) {
+  const done = Number(Boolean(progress.bars)) + Number(Boolean(progress.burgers));
+  return <section className="vote-journey" aria-label="Etapas do seu voto"><div className="vote-journey__label"><span className="live-dot"/> SUA MISSÃO · {results.round === 2 ? 'GRANDE FINAL' : 'PRIMEIRO TURNO'} <strong>{done}/2 CONCLUÍDOS</strong></div>
+    <div className="vote-journey__grid"><button type="button" onClick={() => onNavigate('bares')} className={progress.bars ? 'is-complete' : ''}><span className="journey-number">01</span><span><b>{progress.bars ? 'BAR ESCOLHIDO' : 'ESCOLHA UM BAR'}</b><small>{progress.bars ? 'Voto registrado. Pode alterar.' : 'Karaokê, sinuca, rock e mais'}</small></span>{progress.bars ? <Check/> : <ArrowUpRight/>}</button><span className="journey-connector">+</span><button type="button" onClick={() => onNavigate('burgers')} className={progress.burgers ? 'is-complete' : ''}><span className="journey-number">02</span><span><b>{progress.burgers ? 'HAMBURGUERIA ESCOLHIDA' : 'ESCOLHA UMA HAMBURGUERIA'}</b><small>{progress.burgers ? 'Voto registrado. Pode alterar.' : 'Rodízios, mini burgers e BBQ'}</small></span>{progress.burgers ? <Check/> : <ArrowUpRight/>}</button></div>
+    <p>{done === 2 ? results.round === 1 ? 'Perfeito! Seus dois votos estão registrados. Agora é aguardar a abertura do segundo turno.' : 'Missão completa! Seus dois votos da grande final estão registrados.' : 'É preciso escolher um lugar de cada segmento. O placar é separado e você pode alterar seu voto.'}</p>
+  </section>;
+}
+
+function AdminPanel({ results, config, onRefresh, onToast }) {
+  const [key, setKey] = useState('');
+  const [verified, setVerified] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const request = async (url, method = 'GET') => {
+    setLoading(true); setError('');
+    try {
+      const response = await fetch(url, { method, headers: { 'x-admin-key': key } });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Falha na administração.');
+      setVerified(true); onRefresh();
+      return payload;
+    } catch (e) { setError(e.message); setVerified(false); return null; }
+    finally { setLoading(false); }
+  };
+  const advance = async () => {
+    if (!window.confirm('Abrir o 2º turno com os dois locais mais votados em cada segmento? Essa ação não pode ser desfeita e preserva os votos do 1º turno.')) return;
+    const data = await request('/api/admin/advance', 'POST');
+    if (data) onToast(data.message);
+  };
+  const close = async () => {
+    if (!window.confirm('Encerrar definitivamente a votação? Novos votos não serão aceitos.')) return;
+    const data = await request('/api/admin/close', 'POST');
+    if (data) onToast(data.message);
+  };
+  return <section className="admin-section" id="organizacao"><details><summary><ShieldCheck size={18}/> Área da organização <ChevronRight size={16}/></summary><div className="admin-body"><h3>Controle dos turnos</h3><p>Somente a organização pode iniciar a grande final. A classificação é automática: os 2 mais votados de cada segmento, com desempate por nome.</p>{!config.adminEnabled && <p className="form-error"><CircleAlert size={16}/> Configure <code>VOTE_ADMIN_KEY</code> no Render para habilitar essa função.</p>}
+    <label>Chave do organizador<input type="password" value={key} onChange={e => { setKey(e.target.value); setVerified(false); }} placeholder="Chave configurada no Render" autoComplete="off"/></label>
+    <button type="button" className="button button--outline" disabled={!key || loading || !config.adminEnabled} onClick={() => request('/api/admin/status')}><LockKeyhole size={16}/> {verified ? 'Acesso confirmado' : 'Validar acesso'}</button>
+    {verified && <div className="admin-actions"><div><b>{results.round === 1 ? '1º turno aberto' : results.phase === 'open' ? 'Grande final aberta' : 'Votação encerrada'}</b><small>O resultado do turno anterior nunca é apagado.</small></div>{results.round === 1 && <button className="button button--lime" type="button" disabled={loading} onClick={advance}><Trophy size={17}/> Abrir segundo turno</button>}{results.round === 2 && results.phase === 'open' && <button className="button button--lime" type="button" disabled={loading} onClick={close}><Check size={17}/> Encerrar votação</button>}</div>}
+    {error && <p className="form-error" role="alert"><CircleAlert size={15}/>{error}</p>}</div></details></section>;
+}
+
 export default function App() {
-  const [config, setConfig] = useState({ persistence: 'loading', googlePhotosEnabled: false, requiresAccessCode: false });
+  const [config, setConfig] = useState({ persistence: 'loading', googlePhotosEnabled: false, requiresAccessCode: false, adminEnabled: false });
   const [results, setResults] = useState(emptyResults);
   const [selectedVenue, setSelectedVenue] = useState(null);
+  const [choices, setChoices] = useState({ bars: null, burgers: null });
   const [toast, setToast] = useState(null);
   const [menu, setMenu] = useState(false);
   const refreshResults = useCallback(async () => {
@@ -313,14 +493,20 @@ export default function App() {
     } catch { /* servidor ainda iniciando */ }
   }, []);
   useEffect(() => {
-    fetch('/api/config').then(res => res.json()).then(setConfig).catch(() => setConfig({ persistence: 'offline', googlePhotosEnabled: false, requiresAccessCode: false }));
+    fetch('/api/config').then(res => res.json()).then(setConfig).catch(() => setConfig({ persistence: 'offline', googlePhotosEnabled: false, requiresAccessCode: false, adminEnabled: false }));
     refreshResults();
     const interval = setInterval(refreshResults, 15000);
     return () => clearInterval(interval);
   }, [refreshResults]);
   useEffect(() => {
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reduce) return;
+    const round = results.round || 1;
+    setChoices({
+      bars: localStorage.getItem(`afterhours-choice-r${round}-bars`),
+      burgers: localStorage.getItem(`afterhours-choice-r${round}-burgers`)
+    });
+  }, [results.round]);
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const media = gsap.matchMedia();
     const ctx = gsap.context(() => {
       gsap.from('.hero-copy > *', { opacity: 0, y: 34, duration: 0.85, stagger: 0.1, ease: 'power3.out', delay: 0.15 });
@@ -329,74 +515,83 @@ export default function App() {
       });
       media.add('(max-width: 900px)', () => {
         gsap.utils.toArray('.mobile-story-card').forEach(card => {
-          gsap.from(card, { opacity: 0, y: 35, duration: 0.7, ease: 'power2.out', scrollTrigger: { trigger: card, start: 'top 95%', once: true } });
+          gsap.fromTo(card, { opacity: 0.52, y: 65, rotationX: 9, scale: 0.91 }, { opacity: 1, y: 0, rotationX: 0, scale: 1, ease: 'power2.out', scrollTrigger: { trigger: card, start: 'top 100%', end: 'center 56%', scrub: true } });
         });
       });
     });
     return () => { media.revert(); ctx.revert(); };
-  }, []);
+  }, [results.round]);
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 5500);
+    const timer = setTimeout(() => setToast(null), 6500);
     return () => clearTimeout(timer);
   }, [toast]);
-  const done = (venue, updated) => {
+  const navigate = id => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const openVote = venue => {
+    if (results.phase !== 'open') { setToast('Votação encerrada. O resultado final já está disponível.'); return; }
+    if (results.round === 2 && !results.finalists?.[venue.category]?.includes(venue.id)) {
+      setToast('Essa opção não está na grande final.'); return;
+    }
+    setSelectedVenue(venue);
+  };
+  const done = (venue, updated, round) => {
     if (updated) setResults(updated);
     setSelectedVenue(null);
-    setToast(`Voto registrado em ${venue.name}! Você pode mudar de ideia com o mesmo e-mail.`);
+    const next = { ...choices, [venue.category]: venue.id };
+    setChoices(next);
+    const other = venue.category === 'bars' ? 'burgers' : 'bars';
+    setToast(next[other] ? `Seu voto em ${venue.name} foi salvo! Os dois segmentos do ${round}º turno estão completos.` : `Voto em ${venue.name} registrado! Falta escolher ${other === 'bars' ? 'um bar' : 'uma hamburgueria'}.`);
   };
   const share = async () => {
     const url = window.location.href.split('#')[0];
     try {
-      if (navigator.share) {
-        await navigator.share({ title: 'AFTERHOURS · A escolha é sua', text: 'Vote no bar e na hamburgueria da nossa confraternização!', url });
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-        setToast('Link da votação copiado! Compartilhe no grupo do time.');
-      } else {
-        window.prompt('Copie o link da votação:', url);
-      }
-    } catch (error) { if (error.name !== 'AbortError') setToast('Não foi possível compartilhar o link. Copie a URL do navegador.'); }
+      if (navigator.share) await navigator.share({ title: 'AFTERHOURS · A escolha é sua', text: 'Vote em um bar e uma hamburgueria para a nossa confraternização!', url });
+      else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(url); setToast('Link copiado! Compartilhe no grupo do time.'); }
+      else window.prompt('Copie o link da votação:', url);
+    } catch (error) { if (error.name !== 'AbortError') setToast('Não foi possível compartilhar. Copie o endereço do site.'); }
   };
   const totalVotes = (results.totals.bars || 0) + (results.totals.burgers || 0);
+  const complete = Number(Boolean(choices.bars)) + Number(Boolean(choices.burgers));
   return <div className="site">
-    <header className="site-header"><div className="site-header__inner"><Brand /><nav className={`site-nav ${menu ? 'site-nav--open' : ''}`} aria-label="Navegação principal">
+    <header className="site-header"><div className="site-header__inner"><Brand/><nav className={`site-nav ${menu ? 'site-nav--open' : ''}`} aria-label="Navegação principal">
       <a href="#conceito" onClick={() => setMenu(false)}>A experiência</a><a href="#bares" onClick={() => setMenu(false)}>Bares</a><a href="#burgers" onClick={() => setMenu(false)}>Hamburguerias</a><a href="#resultados" onClick={() => setMenu(false)}>Placar</a>
-    </nav><a href="#bares" className="header-vote-button">ESCOLHER UM LUGAR <ArrowUpRight size={15} /></a><button className="menu-button" onClick={() => setMenu(!menu)} aria-label="Abrir menu">{menu ? <X/> : <Menu/>}</button></div></header>
+    </nav><a href="#votacao" className="header-vote-button">MEUS VOTOS {complete}/2 <ArrowUpRight size={15}/></a><button className="menu-button" onClick={() => setMenu(!menu)} aria-label="Abrir menu">{menu ? <X/> : <Menu/>}</button></div></header>
 
     <main>
-      <section className="hero" id="inicio"><div className="hero-glow hero-glow--one"/><div className="hero-glow hero-glow--two"/><HeroScene />
-        <div className="hero-inner"><div className="hero-copy"><div className="hero-meta"><span className="live-dot" /> O PRÓXIMO ROLÊ COMEÇA AQUI <span className="meta-line" /></div>
+      <section className="hero" id="inicio"><div className="hero-glow hero-glow--one"/><div className="hero-glow hero-glow--two"/><HeroScene/>
+        <div className="hero-inner"><div className="hero-copy"><div className="hero-meta"><span className="live-dot"/> {results.round === 2 ? 'A GRANDE FINAL COMEÇOU' : 'O PRÓXIMO ROLÊ COMEÇA AQUI'} <span className="meta-line"/></div>
           <h1>O rolê é<br/><span className="hero-title-outline">nosso.</span><br/>A escolha <em>é sua.</em></h1>
-          <p>10 lugares. 2 universos. Uma decisão feita em equipe. Explore cada ambiente, escolha seu favorito e acompanhe a votação ao vivo.</p>
-          <div className="hero-actions"><a className="button button--lime button--big" href="#conceito">Explorar opções <ArrowDownRight size={21}/></a><a className="hero-link" href="#resultados"><BarChart3 size={18}/> Acompanhar placar</a><button className="hero-link hero-share" onClick={share}><Share2 size={18}/> Compartilhar</button></div>
-          <div className="hero-kpis"><div><strong>10</strong><span>EXPERIÊNCIAS</span></div><div><strong>02</strong><span>SEGMENTOS</span></div><div><strong>{String(totalVotes).padStart(2, '0')}</strong><span>VOTOS ATÉ AGORA</span></div></div>
-        </div><div className="hero-side-caption"><span>AFTERHOURS / 2026</span><span>23°33′ S · SÃO PAULO</span></div></div>
+          <p>{results.round === 2 ? 'O primeiro turno escolheu os finalistas. Agora são dois confrontos: um bar e uma hamburgueria. Seu voto define o destino.' : '10 lugares. 2 universos. 2 votos por pessoa. Explore cada ambiente em 3D, escolha um bar e uma hamburgueria, e prepare-se para a grande final.'}</p>
+          <div className="hero-actions"><a className="button button--lime button--big" href="#conceito">Explorar experiências <ArrowDownRight size={21}/></a><a className="hero-link" href="#resultados"><BarChart3 size={18}/> Acompanhar placar</a><button className="hero-link hero-share" onClick={share}><Share2 size={18}/> Compartilhar</button></div>
+          <div className="hero-kpis"><div><strong>{results.round === 2 ? '04' : '10'}</strong><span>DESTINOS</span></div><div><strong>02</strong><span>VOTOS POR TURNO</span></div><div><strong>{String(totalVotes).padStart(2, '0')}</strong><span>VOTOS NO TURNO</span></div></div>
+        </div><div className="hero-side-caption"><span>AFTERHOURS / 2026</span><span>O UNIVERSO DA SUA ESCOLHA</span></div></div>
         <a href="#conceito" className="scroll-down" aria-label="Rolar para as experiências"><span>SCROLL TO EXPLORE</span><ArrowDown size={18}/></a>
       </section>
 
-      {config.persistence === 'local-demo' && <div className="demo-notice"><CircleAlert size={18}/><span><b>Modo demonstração:</b> os votos são salvos no servidor local, mas para persistirem após reinicializações no Render é necessário configurar <code>DATABASE_URL</code>.</span></div>}
+      {config.persistence === 'local-demo' && <div className="demo-notice"><CircleAlert size={18}/><span><b>Modo demonstração:</b> sem PostgreSQL os votos podem desaparecer ao reiniciar o servidor. Configure <code>DATABASE_URL</code>.</span></div>}
       {config.persistence === 'offline' && <div className="demo-notice"><CircleAlert size={18}/>Servidor de votação desconectado. Confirme que o backend está em execução.</div>}
 
-      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// ESCOLHA A SUA EXPERIÊNCIA</span><div className="intro-title-row"><h2>QUAL É A <em>VIBE?</em></h2><p>Do karaokê até a última música ao rodízio que ninguém quer encerrar. Você escolhe o destino.</p></div></div>
-        <div className="category-grid"><a href="#bares" className="category-card category-card--bars reveal"><span className="category-card__orb category-card__orb--purple"/><div className="category-card__top"><span>SEGMENTO / 01</span><Music2 size={24}/></div><div className="category-card__bottom"><span>🎤 &nbsp; KARAOKÊ · SINUCA · ROCK</span><h3>NOITE<br/>LÁ FORA.</h3><span className="category-card__footer">5 BARES PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a>
-        <a href="#burgers" className="category-card category-card--burgers reveal"><span className="category-card__orb category-card__orb--orange"/><div className="category-card__top"><span>SEGMENTO / 02</span><UtensilsCrossed size={24}/></div><div className="category-card__bottom"><span>🍔 &nbsp; MINI BURGERS · RODÍZIO · BBQ</span><h3>FOME DE<br/>ROLÊ.</h3><span className="category-card__footer">5 HAMBURGUERIAS PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a></div>
-        <div className="intro-bottom"><span><Sparkles size={15}/> DESLIZE PARA VIVER CADA AMBIENTE</span><span>FOTOS · MAPAS · VOTAÇÃO</span></div>
+      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// EXPERIÊNCIA DE VOTAÇÃO · {results.round}º TURNO</span><div className="intro-title-row"><h2>QUAL É A <em>VIBE?</em></h2><p>Do palco ao rodízio, cada lugar tem seu próprio universo. Navegue pelos cenários e decida onde vamos celebrar.</p></div></div>
+        <div className="category-grid"><a href="#bares" className="category-card category-card--bars reveal"><span className="category-card__orb category-card__orb--purple"/><div className="category-card__top"><span>SEGMENTO / 01</span><Music2 size={24}/></div><div className="category-card__bottom"><span>🎤 &nbsp; KARAOKÊ · SINUCA · ROCK</span><h3>NOITE<br/>LÁ FORA.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 BARES'} PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a>
+        <a href="#burgers" className="category-card category-card--burgers reveal"><span className="category-card__orb category-card__orb--orange"/><div className="category-card__top"><span>SEGMENTO / 02</span><UtensilsCrossed size={24}/></div><div className="category-card__bottom"><span>🍔 &nbsp; MINI BURGERS · RODÍZIO · BBQ</span><h3>FOME DE<br/>ROLÊ.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 HAMBURGUERIAS'} PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a></div>
+        <div className="intro-bottom"><span><Sparkles size={15}/> ROLE, EXPLORE, VOTE · DOIS SEGMENTOS OBRIGATÓRIOS</span><span>FOTOS · MAPAS · VOTAÇÃO · 3D</span></div>
       </section>
 
-      <StorySection category="bars" items={bars} config={config} onVote={setSelectedVenue}/>
+      <div id="votacao"><VotingJourney results={results} progress={choices} onNavigate={navigate}/></div>
+      <StorySection category="bars" items={bars} config={config} onVote={openVote} election={results} chosen={choices.bars}/>
       <div className="between-sections"><div className="between-sections__glow"/><span className="section-kicker reveal">/// SEGUNDO UNIVERSO</span><h2 className="reveal">A NOITE CONTINUA.<br/><em>AGORA COM FOME.</em></h2><div className="between-sections__badge">🍔 <span>NEXT CHAPTER</span><ArrowDownRight size={18}/></div></div>
-      <StorySection category="burgers" items={burgers} config={config} onVote={setSelectedVenue}/>
+      <StorySection category="burgers" items={burgers} config={config} onVote={openVote} election={results} chosen={choices.burgers}/>
 
-      <section id="resultados" className="results-section"><div className="results-wrap"><div className="results-heading reveal"><div><span className="section-kicker">/// DEMOCRACIA DO ROLÊ</span><h2>O PLACAR<br/><em>DA GALERA.</em></h2></div><div className="results-head-right"><span className="results-live"><span className="live-dot"/> ATUALIZA A CADA 15 SEGUNDOS</span><p>Um voto por pessoa em cada segmento. Trocar de ideia faz parte da diversão.</p></div></div>
-        <div className="result-grid"><ResultsPanel category="bars" items={bars} results={results} onVote={setSelectedVenue}/><ResultsPanel category="burgers" items={burgers} results={results} onVote={setSelectedVenue}/></div>
-        <div className="results-footer"><span><Check size={17}/> Votos de bares e hamburguerias são contabilizados separadamente.</span><span>TOTAL DE {totalVotes} VOTOS REGISTRADOS</span></div>
+      <section id="resultados" className="results-section"><div className="results-wrap"><div className="results-heading reveal"><div><span className="section-kicker">/// {results.round === 2 ? 'GRANDE FINAL · 2º TURNO' : 'PRIMEIRO TURNO · 10 DESTINOS'}</span><h2>O PLACAR<br/><em>DA GALERA.</em></h2></div><div className="results-head-right"><span className="results-live"><span className="live-dot"/> ATUALIZA A CADA 15 SEGUNDOS</span><p>{results.phase === 'closed' ? 'A votação foi encerrada. Confira os vencedores.' : results.round === 2 ? 'Os dois mais votados de cada segmento disputam a final. Os votos antigos continuam arquivados.' : 'Escolha um bar e uma hamburgueria. A organização abrirá o 2º turno com os dois primeiros de cada segmento.'}</p></div></div>
+        <div className="result-grid"><ResultsPanel category="bars" items={bars} results={results} onVote={openVote} chosen={choices.bars}/><ResultsPanel category="burgers" items={burgers} results={results} onVote={openVote} chosen={choices.burgers}/></div>
+        <div className="results-footer"><span><Check size={17}/> Um voto por e-mail em cada segmento e em cada turno.</span><span>{totalVotes} VOTOS NO {results.round}º TURNO</span></div>
       </div></section>
 
+      <AdminPanel results={results} config={config} onRefresh={refreshResults} onToast={setToast}/>
       <section className="closing-section"><div className="closing-marquee">GOOD VIBES <span>✳</span> GOOD FOOD <span>✳</span> GOOD PEOPLE <span>✳</span> </div><div className="closing-inner"><span className="section-kicker">ATÉ A PRÓXIMA NOITE</span><h2>O MELHOR PLANO<br/>É <em>DECIDIR JUNTO.</em></h2><a href="#inicio" className="button button--outline">Voltar ao início <ArrowUpRight size={18}/></a></div></section>
     </main>
     <footer className="footer"><Brand compact/><span>FEITO PARA O TIME · SÃO PAULO · 2026</span><span>EXPLORE. ESCOLHA. CELEBRE.</span></footer>
-    <VoteModal venue={selectedVenue} onClose={() => setSelectedVenue(null)} onComplete={done} config={config}/>
+    <VoteModal venue={selectedVenue} onClose={() => setSelectedVenue(null)} onComplete={done} config={config} election={results} progress={choices}/>
     {toast && <div className="toast-message" role="status"><Check size={18}/>{toast}<button onClick={() => setToast(null)} aria-label="Fechar aviso"><X size={16}/></button></div>}
   </div>;
 }

@@ -114,3 +114,19 @@ curl -X POST http://localhost:4000/api/votes \
 - O arquivo `design-tokens.json` facilita o trabalho no Figma; o projeto não inclui um arquivo nativo Figma, nem arquivos Blender/Spline. O 3D é renderizado diretamente com Three.js.
 
 Feito para a confraternização do time. ✨
+
+## V2 · Scrollytelling 3D e votação em dois turnos
+
+**Interface:** agora cada destino aparece em um pôster 3D central, com profundidade, reflexo, card flutuante, partículas/órbitas em Three.js e transições pela rolagem com GSAP ScrollTrigger. No desktop, um único ambiente ocupa o centro da tela por etapa da rolagem, com navegação por mini-etapas e setas. No celular, a revelação dos cards é guiada pela rolagem e considera acessibilidade (`prefers-reduced-motion`). Os dois universos (bares e hamburguerias) têm progressos de voto separados.
+
+**Votos obrigatórios:** a pessoa escolhe **um bar E uma hamburgueria por turno**. A interface mostra `0/2`, `1/2` ou `2/2`. Cada e-mail pode trocar seu voto na mesma categoria; o segundo turno exige que o mesmo e-mail tenha completado os **dois votos do primeiro turno**. Não há validação de posse do e-mail: é uma enquete informal, não uma eleição auditável.
+
+**Passagem para o segundo turno:** a abertura é manual e restrita ao organizador, para que o grupo tenha tempo de votar. Quando aberta, a grande final reúne os **dois estabelecimentos mais votados por segmento** (apenas locais habilitados, empate resolvido por ordem alfabética), e os votos são armazenados em `public.afterhours_final_votes`. Os votos do primeiro turno continuam em `public.afterhours_votes`; o andamento da votação fica em `public.afterhours_election_state`. As duas novas tabelas são criadas automaticamente na inicialização, mas a migração equivalente está versionada em `db/migrations/001_second_round.sql`.
+
+**Para habilitar o organizador no Render:** adicione em **Environment** uma variável `VOTE_ADMIN_KEY` contendo uma senha longa e única, salve e faça deploy. Não compartilhe esse segredo no GitHub ou no WhatsApp. Na parte final do site, abra **Área da organização**, cole a senha e clique em **Validar acesso**. Quando o primeiro turno tiver votos nas duas categorias, clique em **Abrir segundo turno** (irreversível). Depois da final, clique em **Encerrar votação**. O segundo turno começa com 0 votos nas duas categorias, sem afetar a primeira apuração.
+
+**Rotas novas:** `GET /api/admin/status`, `POST /api/admin/advance`, `POST /api/admin/close`, todas exigindo cabeçalho `x-admin-key: SEU_SEGREDO`. `/api/results` expõe `round`, `phase`, `finalists` e `firstRound` quando aplicável. A interface faz polling a cada 15 segundos. Os votos continuam anônimos no banco (hash HMAC do e-mail), com dois registros distintos por rodada quando os dois segmentos são completados.
+
+**Deploy:** o `render.yaml` já executa `npm install --include=dev --no-audit --no-fund && npm run build` para garantir que o Vite seja instalado, mesmo com `NODE_ENV=production`. Alterar o código no GitHub com Render conectado normalmente inicia o próximo deploy, ou use `Manual Deploy → Deploy latest commit`.
+
+**Validação:** `npm test` inclui seleção de finalistas, exclusão de locais indisponíveis e regras da final. Abertura do turno deve ser testada com votos de teste em um banco não produtivo antes da operação real. **Não execute reset/drop nas tabelas de produção.**
