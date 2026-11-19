@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowDown, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3,
-  Check, ChevronRight, CircleAlert, Disc3, ExternalLink, GlassWater,
+  Check, CircleAlert, Disc3, ExternalLink, GlassWater,
   Images, MapPin, Menu, Mic2, MousePointer2, Music2, Navigation,
   Share2, Sparkles, UtensilsCrossed, Vote, X, Trophy, LockKeyhole,
   ChevronLeft, ChevronRight, ShieldCheck, Flame, Eye, CalendarClock
