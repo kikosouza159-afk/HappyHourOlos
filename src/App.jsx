@@ -174,19 +174,6 @@ function LocationPanel({ venue, google, mobile = false }) {
   </div>;
 }
 
-function MobileVenueCard({ venue, index, total, config, onVote, election, chosen }) {
-  const ref = useRef(null);
-  const google = useGooglePhoto(venue.id, config.googlePhotosEnabled, ref);
-  return <article ref={ref} className="mobile-story-card" style={{ '--venue-accent': venue.accent }}>
-    <div className="mobile-story-card__image">
-      <VenueImg src={google?.photos?.[0]?.src} fallback={venue.images[0]} alt={`Ambiente de ${venue.name}`} />
-      <div className="mobile-story-card__number">0{index + 1} / 0{total} · {election.round === 2 ? 'GRANDE FINAL' : '1º TURNO'}</div>
-    </div>
-    <div className="mobile-story-card__body"><VenueDetails venue={venue} onVote={onVote} compact eligibility={election.phase === 'open'} voted={chosen === venue.id} /></div>
-    <details className="mobile-story-card__map"><summary>Ver localização e fotos <ChevronRight size={18} /></summary><LocationPanel venue={venue} google={google} mobile /></details>
-  </article>;
-}
-
 function StageOrbit({ accent }) {
   const holder = useRef(null);
   useEffect(() => {
@@ -258,129 +245,161 @@ function StageOrbit({ accent }) {
   return <div className="stage-orbit" aria-hidden="true" ref={holder} />;
 }
 
-function SpotlightCard({ venue, index, total, onVote, google, canVote, chosen, round }) {
-  const visual = useRef(null);
-  const tilt = event => {
-    if (!visual.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const bounds = visual.current.getBoundingClientRect();
-    const x = (event.clientX - bounds.left) / bounds.width - 0.5;
-    const y = (event.clientY - bounds.top) / bounds.height - 0.5;
-    visual.current.style.setProperty('--tilt-x', `${(-y * 11).toFixed(2)}deg`);
-    visual.current.style.setProperty('--tilt-y', `${(x * 13).toFixed(2)}deg`);
-    visual.current.style.setProperty('--glow-x', `${(x + 0.5) * 100}%`);
-    visual.current.style.setProperty('--glow-y', `${(y + 0.5) * 100}%`);
-  };
-  const leave = () => {
-    if (!visual.current) return;
-    visual.current.style.setProperty('--tilt-x', '0deg');
-    visual.current.style.setProperty('--tilt-y', '0deg');
-  };
-  return <div className="spotlight-wrap" style={{ '--venue-accent': venue.accent }}>
-    <div className="spotlight-beam" aria-hidden="true" />
-    <div className="spotlight-visual" ref={visual} onPointerMove={tilt} onPointerLeave={leave}>
-      <div className="spotlight-visual__frame" />
-      <div className="spotlight-visual__photo"><VenueImg src={google?.photos?.[0]?.src} fallback={venue.images[0]} alt={`Ambiente de ${venue.name}`} /></div>
-      <div className="spotlight-visual__shade" />
-      <div className="spotlight-visual__shine" />
-      <div className="spotlight-visual__top"><span>AFTERHOURS / DESTINATION</span><a href={mapsLink(venue)} target="_blank" rel="noopener noreferrer" title={`Localizar ${venue.name} no Google Maps`}><MapPin size={14}/> VER NO MAPA <ArrowUpRight size={13}/></a></div>
-      <div className="spotlight-visual__number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div>
-      <div className="spotlight-visual__bottom"><span className="spotlight-visual__location"><MapPin size={14} />{venue.neighborhood}</span><h3>{venue.name}</h3><p>{venue.tagline}</p></div>
-      <div className="spotlight-visual__ticket"><span>{round === 2 ? 'FINALISTA' : 'ESCOLHA DO TIME'}</span><strong>{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</strong></div>
-    </div>
-    <div className="spotlight-reflection" aria-hidden="true" />
-    <button className="spotlight-floating-vote" disabled={!canVote || !venue.enabled} onClick={() => onVote(venue)}><Vote size={19} />{!venue.enabled ? 'Indisponível' : !canVote ? 'Votação encerrada' : chosen === venue.id ? 'SEU VOTO · ALTERAR' : 'VOTAR NESSE LUGAR'}<ArrowUpRight size={18}/></button>
-  </div>;
-}
-
-function StorySection({ category, items, config, onVote, election, chosen }) {
+function ExperiencePortal({ category, election, config, choices, onVote, onClose, onSwitch, voteOpen }) {
+  const scrollRef = useRef(null);
   const trackRef = useRef(null);
-  const stageRef = useRef(null);
-  const triggerRef = useRef(null);
-  const visualRef = useRef(null);
+  const closeRef = useRef(null);
+  const cardRef = useRef(null);
   const [active, setActive] = useState(0);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const isBars = category === 'bars';
+  const options = isBars ? bars : burgers;
+  const finalists = election.finalists?.[category] || [];
+  const available = election.round === 2 ? options.filter(v => finalists.includes(v.id)) : options;
+  const visibleItems = available.length ? available : options;
+  const index = Math.min(active, visibleItems.length - 1);
+  const venue = visibleItems[index];
+  const google = useGooglePhoto(venue.id, config.googlePhotosEnabled);
   const round = election.round || 1;
-  const available = round === 2 ? items.filter(v => election.finalists?.[category]?.includes(v.id)) : items;
-  const visibleItems = available.length ? available : items;
-  const current = visibleItems[Math.min(active, visibleItems.length - 1)];
-  const currentIndex = Math.min(active, visibleItems.length - 1);
-  const google = useGooglePhoto(current.id, config.googlePhotosEnabled);
-  useEffect(() => { setActive(0); }, [round, category]);
-  // A cena fica fixa no centro enquanto a rolagem percorre os locais.
-  // GSAP controla o pin e sua distância; não misturar com position:sticky.
-  useLayoutEffect(() => {
+  const otherCategory = isBars ? 'burgers' : 'bars';
+  const otherLabel = isBars ? 'Hamburguerias' : 'Bares';
+  const canVote = election.phase === 'open' && venue.enabled;
+  const selected = choices[category] === venue.id;
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeRef.current?.focus({ preventScroll: true });
+    return () => { document.body.style.overflow = previous; };
+  }, []);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
     const track = trackRef.current;
-    const stage = stageRef.current;
-    if (!track || !stage || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const numberOfSteps = Math.max(1, visibleItems.length - 1);
+    if (!scroller || !track) return;
+    const steps = Math.max(1, visibleItems.length - 1);
+    const update = () => {
+      const total = Math.max(1, track.offsetHeight - scroller.clientHeight);
+      const fraction = Math.max(0, Math.min(1, scroller.scrollTop / total));
+      const target = Math.min(visibleItems.length - 1, Math.round(fraction * steps));
+      setActive(old => old === target ? old : target);
+      track.style.setProperty('--portal-progress', `${Math.round(fraction * 100)}%`);
+    };
+    scroller.addEventListener('scroll', update, { passive: true });
     const trigger = ScrollTrigger.create({
-      id: `afterhours-${category}`,
+      id: `portal-${category}`,
+      scroller,
       trigger: track,
-      pin: stage,
-      pinSpacing: true,
       start: 'top top',
-      end: () => `+=${Math.round(window.innerHeight * numberOfSteps * (window.innerWidth <= 900 ? 0.78 : 0.95))}`,
+      end: 'bottom bottom',
       invalidateOnRefresh: true,
-      anticipatePin: 1,
-      onUpdate: self => {
-        const index = Math.max(0, Math.min(visibleItems.length - 1, Math.round(self.progress * numberOfSteps)));
-        setActive(previous => previous === index ? previous : index);
-        track.style.setProperty('--scroll-progress', `${self.progress * 100}%`);
-      }
+      onUpdate: update
     });
-    triggerRef.current = trigger;
-    const refresh = () => ScrollTrigger.refresh();
-    window.addEventListener('load', refresh);
-    const refreshFrame = requestAnimationFrame(refresh);
-    document.fonts?.ready?.then(() => { if (triggerRef.current === trigger) refresh(); });
+    const frame = requestAnimationFrame(() => { ScrollTrigger.refresh(); update(); });
     return () => {
-      cancelAnimationFrame(refreshFrame);
-      window.removeEventListener('load', refresh);
-      if (triggerRef.current === trigger) triggerRef.current = null;
+      cancelAnimationFrame(frame);
+      scroller.removeEventListener('scroll', update);
       trigger.kill();
     };
-  }, [round, category, visibleItems.length]);
+  }, [category, round, visibleItems.length]);
+
   useEffect(() => {
-    if (!visualRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    gsap.fromTo(visualRef.current, { opacity: 0, rotateY: 19, rotateX: -7, y: 40, scale: 0.85 },
-      { opacity: 1, rotateY: 0, rotateX: 0, y: 0, scale: 1, duration: 0.82, ease: 'power3.out', clearProps: 'transform,opacity' });
-  }, [current.id]);
-  const navigateTo = next => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const clamped = Math.min(visibleItems.length - 1, Math.max(0, next));
-    const fraction = visibleItems.length > 1 ? clamped / (visibleItems.length - 1) : 0;
-    window.scrollTo({ top: trigger.start + (trigger.end - trigger.start) * fraction, behavior: 'smooth' });
+    if (!cardRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const photo = cardRef.current.querySelector('.experience-portal__photo');
+    if (!photo) return;
+    gsap.fromTo(photo,
+      { opacity: 0.45, y: 50, scale: 1.12, filter: 'blur(7px)' },
+      { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)', duration: 0.7, ease: 'power3.out', overwrite: true, clearProps: 'filter,transform,opacity' });
+  }, [venue.id]);
+
+  const goTo = useCallback((target) => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const clamped = Math.min(visibleItems.length - 1, Math.max(0, target));
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    scroller.scrollTo({ top: clamped * scroller.clientHeight, behavior: reduced ? 'instant' : 'smooth' });
+    if (reduced) setActive(clamped);
+  }, [visibleItems.length]);
+
+  useEffect(() => {
+    const handleKey = event => {
+      if (voteOpen) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (locationOpen) setLocationOpen(false);
+        else onClose();
+      } else if (!locationOpen && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') { event.preventDefault(); goTo(index + 1); }
+        if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') { event.preventDefault(); goTo(index - 1); }
+      }
+      if (event.key === 'Tab' && !locationOpen) {
+        const focusable = [...document.querySelectorAll('.experience-portal button:not(:disabled), .experience-portal a[href]')].filter(node => node.getClientRects().length);
+        if (!focusable.length) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose, goTo, index, locationOpen, voteOpen]);
+
+  const tilt = event => {
+    if (!cardRef.current || event.pointerType === 'touch' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const bounds = cardRef.current.getBoundingClientRect();
+    const x = (event.clientX - bounds.left) / bounds.width - 0.5;
+    const y = (event.clientY - bounds.top) / bounds.height - 0.5;
+    cardRef.current.style.setProperty('--portal-tilt-x', `${(-y * 5).toFixed(2)}deg`);
+    cardRef.current.style.setProperty('--portal-tilt-y', `${(x * 6).toFixed(2)}deg`);
   };
-  const isBar = category === 'bars';
-  const title = isBar ? 'A NOITE TEM' : 'O RODÍZIO TEM';
-  const highlight = isBar ? 'VÁRIOS RITMOS.' : 'VÁRIAS CAMADAS.';
-  const bg = google?.photos?.[0]?.src || current.images[0];
-  const canVote = election.phase === 'open';
-  return <section id={category} className={`story-section story-section--${category}`}>
-    <div className="story-mobile-heading"><div className="section-kicker">0{isBar ? 1 : 2} / {round === 2 ? 'FINALISTAS' : 'EXPLORAR'}</div><h2>{title}<br/><em>{highlight}</em></h2><p>{round === 2 ? 'Agora o confronto é direto: dois finalistas, um vencedor.' : isBar ? 'Cinco experiências diferentes. Uma escolha para o time.' : 'Cinco opções para encontrar o rodízio favorito.'}</p></div>
-    <div className="story-track" ref={trackRef}>
-      <div className="story-stage" ref={stageRef} style={{ '--venue-accent': current.accent }}>
-        <div className="story-background"><VenueImg key={current.id} src={bg} fallback={current.images[0]} alt="" /><div className="story-backdrop-overlay" /></div>
-        <StageOrbit accent={current.accent}/>
-        <div className="stage-shell">
-          <div className="stage-top"><span className="section-kicker">{isBar ? '01 / BARES & EXPERIÊNCIAS' : '02 / HAMBURGUERIAS & RODÍZIOS'} <span className="round-stage-tag">· {round}º TURNO</span></span><div className="stage-counter"><strong>0{currentIndex + 1}</strong><span>/ 0{visibleItems.length}</span></div></div>
-          <div className="stage-content stage-content--cinematic">
-            <div className="stage-main" key={`main-${current.id}`}>
-              <span className="stage-mini-label"><span className="live-dot"/> SCROLL / EXPLORE / VOTE</span>
-              <div className="stage-intro"><span className="tiny-plus">+</span> {title}<br/><em>{highlight}</em></div>
-              <p className="stage-subtitle">{round === 2 ? 'O segundo turno começou. Seu voto decide a final.' : 'Cada ambiente é um universo. Entre, explore e escolha.'}</p>
-              <VenueDetails venue={current} category={category} onVote={onVote} google={google} eligibility={canVote} voted={chosen === current.id}/>
+  const untilt = () => {
+    cardRef.current?.style.setProperty('--portal-tilt-x', '0deg');
+    cardRef.current?.style.setProperty('--portal-tilt-y', '0deg');
+  };
+  const photo = google?.photos?.[0]?.src || venue.images[0];
+
+  return <div className={`experience-portal experience-portal--${category}`} role="dialog" aria-modal="true" aria-label={`Explorar ${isBars ? 'bares' : 'hamburguerias'}`} style={{ '--portal-accent': venue.accent }}>
+    <div className="experience-portal__scroll" ref={scrollRef} tabIndex={-1}>
+      <div className="experience-portal__track" ref={trackRef} style={{ height: `${Math.max(1, visibleItems.length) * 100}dvh` }}>
+        <div className="experience-portal__stage">
+          <div className="experience-portal__ambient" aria-hidden="true"><VenueImg key={`background-${venue.id}`} src={photo} fallback={venue.images[0]} alt="" /></div>
+          <StageOrbit accent={venue.accent}/>
+          <div className="experience-portal__content">
+            <header className="experience-portal__header">
+              <div className="experience-portal__identity"><span className="experience-portal__live"/> AFTERHOURS <span className="experience-portal__header-divider">/</span> {isBars ? 'BARES' : 'HAMBURGUERIAS'} <span className="experience-portal__header-divider">/</span> {round}º TURNO</div>
+              <button ref={closeRef} type="button" className="experience-portal__close" onClick={onClose} aria-label="Fechar experiência"><span>SAIR DA EXPERIÊNCIA</span><X size={22}/></button>
+            </header>
+            <div className="experience-portal__heading"><div><span className="experience-portal__eyebrow">ESCOLHA / EXPLORE / VOTE</span><h2>{isBars ? 'A NOITE É SUA.' : 'A FOME É SUA.'} <em>A ESCOLHA TAMBÉM.</em></h2></div><span className="experience-portal__chapter">{String(index + 1).padStart(2, '0')} <small>/ {String(visibleItems.length).padStart(2, '0')}</small></span></div>
+            <div className="experience-portal__layout">
+              <div ref={cardRef} className="experience-portal__card" onPointerMove={tilt} onPointerLeave={untilt} key={`portal-card-${category}`}>
+                <div className="experience-portal__photo" key={`photo-${venue.id}`}><VenueImg src={photo} fallback={venue.images[0]} alt={`Ambiente de ${venue.name}`} /></div>
+                <div className="experience-portal__glass" aria-hidden="true" />
+                <div className="experience-portal__frame" aria-hidden="true" />
+                <div className="experience-portal__card-top"><span>DESTINATION #{String(index + 1).padStart(2, '0')}</span><button type="button" onClick={() => setLocationOpen(true)}><MapPin size={15}/> FOTOS & MAPA <ArrowUpRight size={14}/></button></div>
+                <div className="experience-portal__card-bottom" aria-live="polite"><span><MapPin size={15}/>{venue.neighborhood} · {venue.type}</span><h3>{venue.name}</h3><p>{venue.tagline}</p></div>
+                <button type="button" className="experience-portal__mobile-vote" disabled={!canVote} onClick={() => onVote(venue)}><Vote size={16}/>{!venue.enabled ? 'Indisponível' : election.phase !== 'open' ? 'Votação encerrada' : selected ? 'ALTERAR MEU VOTO' : 'VOTAR NESTE LOCAL'}<ArrowUpRight size={15}/></button>
+              </div>
+              <aside className="experience-portal__aside">
+                <div className="experience-portal__aside-top"><span className="experience-portal__aside-kicker">ENTRE NESSE UNIVERSO</span><div className="experience-portal__icon">{isBars ? <Music2 size={27}/> : <UtensilsCrossed size={27}/>}</div></div>
+                <p className="experience-portal__aside-lede" key={`lede-${venue.id}`}>{venue.description}</p>
+                <div className="experience-portal__tags">{venue.details.map(tag => <span key={tag}>{tag}</span>)}</div>
+                {venue.notice && <p className="experience-portal__notice"><CircleAlert size={15}/>{venue.notice}</p>}
+                <div className="experience-portal__aside-actions"><button className="experience-portal__vote" type="button" onClick={() => onVote(venue)} disabled={!canVote}><Vote size={18}/>{!venue.enabled ? 'INDISPONÍVEL' : election.phase !== 'open' ? 'VOTAÇÃO ENCERRADA' : selected ? 'ALTERAR MEU VOTO' : 'VOTAR NESTE LUGAR'}<ArrowUpRight size={17}/></button><button className="experience-portal__maps" onClick={() => setLocationOpen(true)} type="button"><Images size={17}/> Ver fotos e localização <ChevronRight size={17}/></button></div>
+                <div className="experience-portal__step-note">{choices[category] ? <><Check size={15}/> Seu voto neste segmento foi registrado.</> : <>São dois votos: um em cada segmento.</>}</div>
+              </aside>
             </div>
-            <div className="stage-center" ref={visualRef} key={`visual-${current.id}`}><SpotlightCard venue={current} index={currentIndex} total={visibleItems.length} onVote={onVote} google={google} canVote={canVote} chosen={chosen} round={round}/></div>
-            <div className="stage-side" key={`side-${current.id}`}><LocationPanel venue={current} google={google}/></div>
+            <footer className="experience-portal__footer">
+              <div className="experience-portal__controls"><button type="button" onClick={() => goTo(index - 1)} disabled={index === 0} aria-label="Ver estabelecimento anterior"><ChevronLeft size={20}/></button><div className="experience-portal__steps" aria-label="Navegação entre estabelecimentos">{visibleItems.map((item, i) => <button key={item.id} type="button" className={i === index ? 'active' : ''} onClick={() => goTo(i)} aria-label={`Explorar ${item.name}`} aria-current={i === index ? 'step' : undefined}><span>{String(i + 1).padStart(2, '0')}</span><i/></button>)}</div><button type="button" onClick={() => goTo(index + 1)} disabled={index === visibleItems.length - 1} aria-label="Ver próximo estabelecimento"><ChevronRight size={20}/></button></div>
+              <span className="experience-portal__scroll-hint"><MousePointer2 size={15}/>{index === visibleItems.length - 1 ? 'VOCÊ VIU TODAS AS OPÇÕES' : 'ROLE PARA ENTRAR NO PRÓXIMO AMBIENTE'}</span>
+              <button className="experience-portal__switch" onClick={() => onSwitch(otherCategory)} type="button">IR PARA {otherLabel.toUpperCase()} <ArrowUpRight size={16}/></button>
+            </footer>
           </div>
-          <div className="stage-bottom stage-bottom--cinematic"><div className="story-switcher"><button type="button" onClick={() => navigateTo(currentIndex - 1)} disabled={currentIndex === 0} aria-label="Lugar anterior"><ChevronLeft size={22}/></button><div className="stage-steps" aria-label="Selecionar estabelecimento">{visibleItems.map((item, i) => <button type="button" aria-label={`Ver ${item.name}`} onClick={() => navigateTo(i)} key={item.id} className={i === currentIndex ? 'is-active' : ''} style={{ '--i': i }}><b>0{i + 1}</b><span /></button>)}</div><button type="button" onClick={() => navigateTo(currentIndex + 1)} disabled={currentIndex === visibleItems.length - 1} aria-label="Próximo lugar"><ChevronRight size={22}/></button></div><span className="scroll-label"><MousePointer2 size={15}/> DESLIZE A NOITE PARA A PRÓXIMA EXPERIÊNCIA</span></div>
-          <div className="stage-progress" aria-hidden="true"><div /></div>
+          <div className="experience-portal__progress" aria-hidden="true"><span/></div>
         </div>
       </div>
     </div>
-    <div className="mobile-stories">{visibleItems.map((venue, index) => <MobileVenueCard key={venue.id} venue={venue} index={index} total={visibleItems.length} config={config} onVote={onVote} election={election} chosen={chosen}/>)}</div>
-  </section>;
+    {locationOpen && <div className="experience-portal__location-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setLocationOpen(false); }}><div className="experience-portal__location-panel" role="region" aria-label={`Fotos e localização de ${venue.name}`}><div className="experience-portal__location-title"><strong>{venue.name}</strong><button type="button" onClick={() => setLocationOpen(false)} aria-label="Fechar fotos e mapa"><X size={22}/></button></div><LocationPanel venue={venue} google={google}/></div></div>}
+  </div>;
 }
 
 function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
@@ -501,6 +520,8 @@ export default function App() {
   const [config, setConfig] = useState({ persistence: 'loading', googlePhotosEnabled: false, requiresAccessCode: false, adminEnabled: false });
   const [results, setResults] = useState(emptyResults);
   const [selectedVenue, setSelectedVenue] = useState(null);
+  const [experienceCategory, setExperienceCategory] = useState(null);
+  const lastFocusedRef = useRef(null);
   const [choices, setChoices] = useState({ bars: null, burgers: null });
   const [toast, setToast] = useState(null);
   const [menu, setMenu] = useState(false);
@@ -544,7 +565,20 @@ export default function App() {
     const timer = setTimeout(() => setToast(null), 6500);
     return () => clearTimeout(timer);
   }, [toast]);
-  const navigate = id => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const openExperience = category => {
+    lastFocusedRef.current = document.activeElement;
+    setMenu(false);
+    setExperienceCategory(category);
+  };
+  const closeExperience = () => {
+    setExperienceCategory(null);
+    requestAnimationFrame(() => lastFocusedRef.current?.focus?.({ preventScroll: true }));
+  };
+  const navigate = id => {
+    if (id === 'bares') openExperience('bars');
+    else if (id === 'burgers') openExperience('burgers');
+    else document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const openVote = venue => {
     if (results.phase !== 'open') { setToast('Votação encerrada. O resultado final já está disponível.'); return; }
     if (results.round === 2 && !results.finalists?.[venue.category]?.includes(venue.id)) {
@@ -572,7 +606,7 @@ export default function App() {
   const complete = Number(Boolean(choices.bars)) + Number(Boolean(choices.burgers));
   return <div className="site">
     <header className="site-header"><div className="site-header__inner"><Brand/><nav className={`site-nav ${menu ? 'site-nav--open' : ''}`} aria-label="Navegação principal">
-      <a href="#conceito" onClick={() => setMenu(false)}>A experiência</a><a href="#bares" onClick={() => setMenu(false)}>Bares</a><a href="#burgers" onClick={() => setMenu(false)}>Hamburguerias</a><a href="#resultados" onClick={() => setMenu(false)}>Placar</a>
+      <a href="#conceito" onClick={() => setMenu(false)}>A experiência</a><button type="button" onClick={() => openExperience('bars')}>Bares</button><button type="button" onClick={() => openExperience('burgers')}>Hamburguerias</button><a href="#resultados" onClick={() => setMenu(false)}>Placar</a>
     </nav><a href="#votacao" className="header-vote-button">MEUS VOTOS {complete}/2 <ArrowUpRight size={15}/></a><button className="menu-button" onClick={() => setMenu(!menu)} aria-label="Abrir menu">{menu ? <X/> : <Menu/>}</button></div></header>
 
     <main>
@@ -589,16 +623,13 @@ export default function App() {
       {config.persistence === 'local-demo' && <div className="demo-notice"><CircleAlert size={18}/><span><b>Modo demonstração:</b> sem PostgreSQL os votos podem desaparecer ao reiniciar o servidor. Configure <code>DATABASE_URL</code>.</span></div>}
       {config.persistence === 'offline' && <div className="demo-notice"><CircleAlert size={18}/>Servidor de votação desconectado. Confirme que o backend está em execução.</div>}
 
-      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// EXPERIÊNCIA DE VOTAÇÃO · {results.round}º TURNO</span><div className="intro-title-row"><h2>ESCOLHA A SUA <em>EXPERIÊNCIA.</em></h2><p>Do karaokê ao rodízio: escolha por onde começar. Depois, role para explorar cada ambiente em tela cheia e votar em um lugar por categoria.</p></div></div>
-        <div className="category-grid"><span className="category-join" aria-hidden="true">+</span><a href="#bares" className="category-card category-card--bars reveal"><span className="category-card__orb category-card__orb--purple"/><div className="category-card__top"><span>SEGMENTO / 01</span><Music2 size={24}/></div><div className="category-card__bottom"><span>🎤 &nbsp; KARAOKÊ · SINUCA · ROCK</span><h3>NOITE<br/>LÁ FORA.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 BARES'} PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a>
-        <a href="#burgers" className="category-card category-card--burgers reveal"><span className="category-card__orb category-card__orb--orange"/><div className="category-card__top"><span>SEGMENTO / 02</span><UtensilsCrossed size={24}/></div><div className="category-card__bottom"><span>🍔 &nbsp; MINI BURGERS · RODÍZIO · BBQ</span><h3>FOME DE<br/>ROLÊ.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 HAMBURGUERIAS'} PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a></div>
+      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// EXPERIÊNCIA DE VOTAÇÃO · {results.round}º TURNO</span><div className="intro-title-row"><h2>ESCOLHA A SUA <em>EXPERIÊNCIA.</em></h2><p>Clique em um universo para abrir o portal em tela cheia. Role dentro da experiência, explore os ambientes e vote em um lugar por categoria.</p></div></div>
+        <div className="category-grid"><span className="category-join" aria-hidden="true">+</span><button type="button" onClick={() => openExperience('bars')} className="category-card category-card--bars reveal" aria-label="Explorar bares em uma experiência interativa"><span className="category-card__photo"><VenueImg src={bars[0].images[0]} fallback={bars[0].images[1]} alt=""/></span><span className="category-card__orb category-card__orb--purple"/><div className="category-card__top"><span>SEGMENTO / 01</span><Music2 size={24}/></div><div className="category-card__bottom"><span>🎤 &nbsp; KARAOKÊ · SINUCA · ROCK</span><h3>NOITE<br/>LÁ FORA.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 BARES'} · ENTRAR NO PORTAL <ArrowUpRight size={22}/></span></div></button>
+        <button type="button" onClick={() => openExperience('burgers')} className="category-card category-card--burgers reveal" aria-label="Explorar hamburguerias em uma experiência interativa"><span className="category-card__photo"><VenueImg src={burgers[0].images[0]} fallback={burgers[0].images[1]} alt=""/></span><span className="category-card__orb category-card__orb--orange"/><div className="category-card__top"><span>SEGMENTO / 02</span><UtensilsCrossed size={24}/></div><div className="category-card__bottom"><span>🍔 &nbsp; MINI BURGERS · RODÍZIO · BBQ</span><h3>FOME DE<br/>ROLÊ.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 HAMBURGUERIAS'} · ENTRAR NO PORTAL <ArrowUpRight size={22}/></span></div></button></div>
         <div className="intro-bottom"><span><Sparkles size={15}/> ROLE, EXPLORE, VOTE · DOIS SEGMENTOS OBRIGATÓRIOS</span><span>FOTOS · MAPAS · VOTAÇÃO · 3D</span></div>
       </section>
 
       <div id="votacao"><VotingJourney results={results} progress={choices} onNavigate={navigate}/></div>
-      <StorySection category="bars" items={bars} config={config} onVote={openVote} election={results} chosen={choices.bars}/>
-      <div className="between-sections"><div className="between-sections__glow"/><span className="section-kicker reveal">/// SEGUNDO UNIVERSO</span><h2 className="reveal">A NOITE CONTINUA.<br/><em>AGORA COM FOME.</em></h2><div className="between-sections__badge">🍔 <span>NEXT CHAPTER</span><ArrowDownRight size={18}/></div></div>
-      <StorySection category="burgers" items={burgers} config={config} onVote={openVote} election={results} chosen={choices.burgers}/>
 
       <section id="resultados" className="results-section"><div className="results-wrap"><div className="results-heading reveal"><div><span className="section-kicker">/// {results.round === 2 ? 'GRANDE FINAL · 2º TURNO' : 'PRIMEIRO TURNO · 10 DESTINOS'}</span><h2>O PLACAR<br/><em>DA GALERA.</em></h2></div><div className="results-head-right"><span className="results-live"><span className="live-dot"/> ATUALIZA A CADA 15 SEGUNDOS</span><p>{results.phase === 'closed' ? 'A votação foi encerrada. Confira os vencedores.' : results.round === 2 ? 'Os dois mais votados de cada segmento disputam a final. Os votos antigos continuam arquivados.' : 'Escolha um bar e uma hamburgueria. A organização abrirá o 2º turno com os dois primeiros de cada segmento.'}</p></div></div>
         <div className="result-grid"><ResultsPanel category="bars" items={bars} results={results} onVote={openVote} chosen={choices.bars}/><ResultsPanel category="burgers" items={burgers} results={results} onVote={openVote} chosen={choices.burgers}/></div>
@@ -609,6 +640,7 @@ export default function App() {
       <section className="closing-section"><div className="closing-marquee">GOOD VIBES <span>✳</span> GOOD FOOD <span>✳</span> GOOD PEOPLE <span>✳</span> </div><div className="closing-inner"><span className="section-kicker">ATÉ A PRÓXIMA NOITE</span><h2>O MELHOR PLANO<br/>É <em>DECIDIR JUNTO.</em></h2><a href="#inicio" className="button button--outline">Voltar ao início <ArrowUpRight size={18}/></a></div></section>
     </main>
     <footer className="footer"><Brand compact/><span>FEITO PARA O TIME · SÃO PAULO · 2026</span><span>EXPLORE. ESCOLHA. CELEBRE.</span></footer>
+    {experienceCategory && <ExperiencePortal key={experienceCategory} category={experienceCategory} election={results} config={config} choices={choices} onVote={openVote} onClose={closeExperience} onSwitch={setExperienceCategory} voteOpen={Boolean(selectedVenue)}/>}
     <VoteModal venue={selectedVenue} onClose={() => setSelectedVenue(null)} onComplete={done} config={config} election={results} progress={choices}/>
     {toast && <div className="toast-message" role="status"><Check size={18}/>{toast}<button onClick={() => setToast(null)} aria-label="Fechar aviso"><X size={16}/></button></div>}
   </div>;

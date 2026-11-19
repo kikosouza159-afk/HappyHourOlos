@@ -130,3 +130,15 @@ Feito para a confraternização do time. ✨
 **Deploy:** o `render.yaml` já executa `npm install --include=dev --no-audit --no-fund && npm run build` para garantir que o Vite seja instalado, mesmo com `NODE_ENV=production`. Alterar o código no GitHub com Render conectado normalmente inicia o próximo deploy, ou use `Manual Deploy → Deploy latest commit`.
 
 **Validação:** `npm test` inclui seleção de finalistas, exclusão de locais indisponíveis e regras da final. Abertura do turno deve ser testada com votos de teste em um banco não produtivo antes da operação real. **Não execute reset/drop nas tabelas de produção.**
+
+## 8. Experiência imersiva em popup (V4)
+
+A página principal agora mostra **Escolha a sua experiência** com os dois segmentos. Clique em **Bares** ou **Hamburguerias** para abrir um **portal em tela cheia**. A rolagem fica contida no popup, com um palco fixo e os estabelecimentos assumindo o centro à medida que a pessoa percorre os locais. O GSAP/ScrollTrigger acompanha o progresso de uma rolagem interna, com o CSS `position: sticky` mantendo o palco no lugar. O site por trás é bloqueado durante a exploração.
+
+- Navegação por roda do mouse, toque no celular, setas do teclado e botões de avançar/voltar.
+- Cartões centrais 3D, mudanças de ambiente, fotos do Google Places quando habilitadas, galeria/mapa sob demanda e botão de voto integrado.
+- Botão **Ir para** alterna entre bares e hamburguerias sem voltar ao início. O voto continua sendo confirmado pelo mesmo formulário existente.
+- A lógica e as tabelas de votação em dois turnos permanecem intactas. A grande final exibe apenas os dois finalistas de cada segmento.
+- `Esc` fecha primeiro a galeria/mapa, ou fecha a experiência principal; movimentos reduzidos seguem a preferência de acessibilidade do sistema.
+
+A instalação de dependências npm pode ser bloqueada em ambientes sem acesso à rede. Os testes de regras do projeto (`npm test`) e a verificação da compilação JSX devem ser executados antes de publicar; o build Vite completo ocorre no Render.
