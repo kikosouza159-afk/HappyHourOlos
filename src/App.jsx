@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ArrowDown, ArrowDownRight, ArrowRight, ArrowUpRight, BarChart3,
   Check, ChevronRight, CircleAlert, Disc3, ExternalLink, GlassWater,
@@ -282,7 +282,7 @@ function SpotlightCard({ venue, index, total, onVote, google, canVote, chosen, r
       <div className="spotlight-visual__photo"><VenueImg src={google?.photos?.[0]?.src} fallback={venue.images[0]} alt={`Ambiente de ${venue.name}`} /></div>
       <div className="spotlight-visual__shade" />
       <div className="spotlight-visual__shine" />
-      <div className="spotlight-visual__top"><span>AFTERHOURS / DESTINATION</span><span>{round === 2 ? 'THE FINAL' : 'CHAPTER 01'}</span></div>
+      <div className="spotlight-visual__top"><span>AFTERHOURS / DESTINATION</span><a href={mapsLink(venue)} target="_blank" rel="noopener noreferrer" title={`Localizar ${venue.name} no Google Maps`}><MapPin size={14}/> VER NO MAPA <ArrowUpRight size={13}/></a></div>
       <div className="spotlight-visual__number" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div>
       <div className="spotlight-visual__bottom"><span className="spotlight-visual__location"><MapPin size={14} />{venue.neighborhood}</span><h3>{venue.name}</h3><p>{venue.tagline}</p></div>
       <div className="spotlight-visual__ticket"><span>{round === 2 ? 'FINALISTA' : 'ESCOLHA DO TIME'}</span><strong>{String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}</strong></div>
@@ -294,6 +294,8 @@ function SpotlightCard({ venue, index, total, onVote, google, canVote, chosen, r
 
 function StorySection({ category, items, config, onVote, election, chosen }) {
   const trackRef = useRef(null);
+  const stageRef = useRef(null);
+  const triggerRef = useRef(null);
   const visualRef = useRef(null);
   const [active, setActive] = useState(0);
   const round = election.round || 1;
@@ -303,22 +305,39 @@ function StorySection({ category, items, config, onVote, election, chosen }) {
   const currentIndex = Math.min(active, visibleItems.length - 1);
   const google = useGooglePhoto(current.id, config.googlePhotosEnabled);
   useEffect(() => { setActive(0); }, [round, category]);
-  useEffect(() => {
-    const element = trackRef.current;
-    if (!element) return;
-    const mm = gsap.matchMedia();
-    mm.add('(min-width: 901px)', () => {
-      const trigger = ScrollTrigger.create({
-        trigger: element, start: 'top top', end: 'bottom bottom',
-        onUpdate: self => {
-          const index = Math.min(visibleItems.length - 1, Math.max(0, Math.floor(self.progress * visibleItems.length)));
-          setActive(previous => previous === index ? previous : index);
-          element.style.setProperty('--scroll-progress', `${self.progress * 100}%`);
-        }
-      });
-      return () => trigger.kill();
+  // A cena fica fixa no centro enquanto a rolagem percorre os locais.
+  // GSAP controla o pin e sua distância; não misturar com position:sticky.
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    const stage = stageRef.current;
+    if (!track || !stage || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const numberOfSteps = Math.max(1, visibleItems.length - 1);
+    const trigger = ScrollTrigger.create({
+      id: `afterhours-${category}`,
+      trigger: track,
+      pin: stage,
+      pinSpacing: true,
+      start: 'top top',
+      end: () => `+=${Math.round(window.innerHeight * numberOfSteps * (window.innerWidth <= 900 ? 0.78 : 0.95))}`,
+      invalidateOnRefresh: true,
+      anticipatePin: 1,
+      onUpdate: self => {
+        const index = Math.max(0, Math.min(visibleItems.length - 1, Math.round(self.progress * numberOfSteps)));
+        setActive(previous => previous === index ? previous : index);
+        track.style.setProperty('--scroll-progress', `${self.progress * 100}%`);
+      }
     });
-    return () => mm.revert();
+    triggerRef.current = trigger;
+    const refresh = () => ScrollTrigger.refresh();
+    window.addEventListener('load', refresh);
+    const refreshFrame = requestAnimationFrame(refresh);
+    document.fonts?.ready?.then(() => { if (triggerRef.current === trigger) refresh(); });
+    return () => {
+      cancelAnimationFrame(refreshFrame);
+      window.removeEventListener('load', refresh);
+      if (triggerRef.current === trigger) triggerRef.current = null;
+      trigger.kill();
+    };
   }, [round, category, visibleItems.length]);
   useEffect(() => {
     if (!visualRef.current || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -326,12 +345,11 @@ function StorySection({ category, items, config, onVote, election, chosen }) {
       { opacity: 1, rotateY: 0, rotateX: 0, y: 0, scale: 1, duration: 0.82, ease: 'power3.out', clearProps: 'transform,opacity' });
   }, [current.id]);
   const navigateTo = next => {
-    const track = trackRef.current;
-    if (!track) return;
-    const amount = Math.max(0, track.offsetHeight - window.innerHeight);
-    const top = track.getBoundingClientRect().top + window.scrollY;
-    const fraction = (next + 0.38) / visibleItems.length;
-    window.scrollTo({ top: top + amount * fraction, behavior: 'smooth' });
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const clamped = Math.min(visibleItems.length - 1, Math.max(0, next));
+    const fraction = visibleItems.length > 1 ? clamped / (visibleItems.length - 1) : 0;
+    window.scrollTo({ top: trigger.start + (trigger.end - trigger.start) * fraction, behavior: 'smooth' });
   };
   const isBar = category === 'bars';
   const title = isBar ? 'A NOITE TEM' : 'O RODÍZIO TEM';
@@ -340,8 +358,8 @@ function StorySection({ category, items, config, onVote, election, chosen }) {
   const canVote = election.phase === 'open';
   return <section id={category} className={`story-section story-section--${category}`}>
     <div className="story-mobile-heading"><div className="section-kicker">0{isBar ? 1 : 2} / {round === 2 ? 'FINALISTAS' : 'EXPLORAR'}</div><h2>{title}<br/><em>{highlight}</em></h2><p>{round === 2 ? 'Agora o confronto é direto: dois finalistas, um vencedor.' : isBar ? 'Cinco experiências diferentes. Uma escolha para o time.' : 'Cinco opções para encontrar o rodízio favorito.'}</p></div>
-    <div className="story-track" ref={trackRef} style={{ height: `${visibleItems.length * 108}vh` }}>
-      <div className="story-stage" style={{ '--venue-accent': current.accent }}>
+    <div className="story-track" ref={trackRef}>
+      <div className="story-stage" ref={stageRef} style={{ '--venue-accent': current.accent }}>
         <div className="story-background"><VenueImg key={current.id} src={bg} fallback={current.images[0]} alt="" /><div className="story-backdrop-overlay" /></div>
         <StageOrbit accent={current.accent}/>
         <div className="stage-shell">
@@ -571,8 +589,8 @@ export default function App() {
       {config.persistence === 'local-demo' && <div className="demo-notice"><CircleAlert size={18}/><span><b>Modo demonstração:</b> sem PostgreSQL os votos podem desaparecer ao reiniciar o servidor. Configure <code>DATABASE_URL</code>.</span></div>}
       {config.persistence === 'offline' && <div className="demo-notice"><CircleAlert size={18}/>Servidor de votação desconectado. Confirme que o backend está em execução.</div>}
 
-      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// EXPERIÊNCIA DE VOTAÇÃO · {results.round}º TURNO</span><div className="intro-title-row"><h2>QUAL É A <em>VIBE?</em></h2><p>Do palco ao rodízio, cada lugar tem seu próprio universo. Navegue pelos cenários e decida onde vamos celebrar.</p></div></div>
-        <div className="category-grid"><a href="#bares" className="category-card category-card--bars reveal"><span className="category-card__orb category-card__orb--purple"/><div className="category-card__top"><span>SEGMENTO / 01</span><Music2 size={24}/></div><div className="category-card__bottom"><span>🎤 &nbsp; KARAOKÊ · SINUCA · ROCK</span><h3>NOITE<br/>LÁ FORA.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 BARES'} PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a>
+      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// EXPERIÊNCIA DE VOTAÇÃO · {results.round}º TURNO</span><div className="intro-title-row"><h2>ESCOLHA A SUA <em>EXPERIÊNCIA.</em></h2><p>Do karaokê ao rodízio: escolha por onde começar. Depois, role para explorar cada ambiente em tela cheia e votar em um lugar por categoria.</p></div></div>
+        <div className="category-grid"><span className="category-join" aria-hidden="true">+</span><a href="#bares" className="category-card category-card--bars reveal"><span className="category-card__orb category-card__orb--purple"/><div className="category-card__top"><span>SEGMENTO / 01</span><Music2 size={24}/></div><div className="category-card__bottom"><span>🎤 &nbsp; KARAOKÊ · SINUCA · ROCK</span><h3>NOITE<br/>LÁ FORA.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 BARES'} PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a>
         <a href="#burgers" className="category-card category-card--burgers reveal"><span className="category-card__orb category-card__orb--orange"/><div className="category-card__top"><span>SEGMENTO / 02</span><UtensilsCrossed size={24}/></div><div className="category-card__bottom"><span>🍔 &nbsp; MINI BURGERS · RODÍZIO · BBQ</span><h3>FOME DE<br/>ROLÊ.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : '5 HAMBURGUERIAS'} PARA EXPLORAR <ArrowUpRight size={22}/></span></div></a></div>
         <div className="intro-bottom"><span><Sparkles size={15}/> ROLE, EXPLORE, VOTE · DOIS SEGMENTOS OBRIGATÓRIOS</span><span>FOTOS · MAPAS · VOTAÇÃO · 3D</span></div>
       </section>
