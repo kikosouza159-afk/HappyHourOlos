@@ -1,6 +1,6 @@
 # AFTERHOURS · Votação da confraternização
 
-Site interativo, mobile-first, feito para o time escolher **um bar** e **uma hamburgueria** para a confraternização. Cada segmento possui cinco lugares, **scrollytelling** no desktop, galeria de fotos, localização no Google Maps, botão de voto e placar atualizado a cada 15 segundos.
+Site interativo, mobile-first, feito para o time escolher **um bar** e **uma hamburgueria** para a confraternização. O segmento Bares possui seis locais, e Hamburguerias possui cinco, **scrollytelling** no desktop, galeria de fotos, localização no Google Maps, botão de voto e placar atualizado a cada 15 segundos.
 
 ## Tecnologias
 
