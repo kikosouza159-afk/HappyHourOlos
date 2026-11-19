@@ -1,0 +1,33 @@
+{
+  "name": "afterhours-votacao",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Scrollytelling e votação de bares e hamburguerias para confraternização",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 0.0.0.0\" \"node --watch server/index.js\"",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "node --check server/index.js && node --check vite.config.js",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "gsap": "^3.12.7",
+    "lucide-react": "^0.468.0",
+    "pg": "^8.13.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.172.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "vite": "^6.0.5"
+  }
+}

@@ -1,0 +1,7 @@
+{
+ "project":"AFTERHOURS | Confraternização 2026",
+ "colors":{"background":"#080911","surface":"#13141c","foreground":"#f8f8f8","muted":"#9a9ba8","barAccent":"#c9f675","burgerAccent":"#ffbc80","border":"#343642"},
+ "typography":{"display":"Space Grotesk","body":"DM Sans"},
+ "radii":{"card":"24px","button":"100px"},
+ "note":"Tokens para reproduzir o layout no Figma; a implementação executável está em React/CSS."
+}
