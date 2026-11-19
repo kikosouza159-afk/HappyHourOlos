@@ -145,6 +145,30 @@
     "imageSource": "Imagens ilustrativas; fotos reais via Google Places quando disponível"
   },
   {
+    "id": "bar-ball-five-augusta",
+    "category": "bars",
+    "name": "Ball Five",
+    "neighborhood": "Consolação",
+    "address": "Rua Augusta, 1149, Consolação, São Paulo, SP, Brasil",
+    "type": "SINUCA + ARCADE",
+    "tagline": "A noite entra em jogo.",
+    "description": "Bar temático na Rua Augusta com mesas de sinuca, pebolim, fliperamas e petiscos. Uma opção descontraída para reunir o time e competir de brincadeira.",
+    "details": [
+      "Sinuca",
+      "Pebolim e fliperama",
+      "Petiscos e drinks"
+    ],
+    "accent": "#32baff",
+    "enabled": true,
+    "website": "https://www.instagram.com/ballfive5/",
+    "mapsUrl": "https://maps.app.goo.gl/5wfCXgtkKDFS4aqq5",
+    "images": [
+      "/venues/ball-five-augusta.webp"
+    ],
+    "imageSource": "Foto do Ball Five enviada pelo organizador",
+    "preferLocalPhoto": true
+  },
+  {
     "id": "burger-ferreiro",
     "category": "burgers",
     "name": "A Casa do Ferreiro",

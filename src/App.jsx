@@ -135,7 +135,7 @@ function VenueImg({ src, fallback, alt, className = '', ...props }) {
 }
 
 function ImageCredit({ google, venue }) {
-  if (!google?.photos?.length) return <span className="photo-credit">{venue.imageSource || 'Imagem ilustrativa'}</span>;
+  if (venue.preferLocalPhoto || !google?.photos?.length) return <span className="photo-credit">{venue.imageSource || 'Imagem ilustrativa'}</span>;
   const authors = [...new Map(google.photos.flatMap(p => p.attributions || []).filter(a => a.name).map(a => [a.name, a])).values()];
   return <span className="photo-credit">Fotos via Google Places{authors.length ? ' · ' : ''}{authors.map((a, i) => <React.Fragment key={a.name}>{i > 0 && ', '}{a.url ? <a href={a.url} target="_blank" rel="noreferrer">{a.name}</a> : a.name}</React.Fragment>)}</span>;
 }
@@ -158,7 +158,7 @@ function VenueDetails({ venue, category, onVote, google, compact = false, eligib
 }
 
 function LocationPanel({ venue, google, mobile = false }) {
-  const googlePhotos = google?.photos?.map(p => p.src) || [];
+  const googlePhotos = venue.preferLocalPhoto ? [] : (google?.photos?.map(p => p.src) || []);
   const photoUrls = venue.images.map((fallback, index) => googlePhotos[index] || fallback);
   return <div className={`location-panel ${mobile ? 'location-panel--mobile' : ''}`}>
     <div className="location-panel__heading"><span><MapPin size={15} /> ONDE FICA</span><span>SP · BR</span></div>
@@ -356,7 +356,7 @@ function ExperiencePortal({ category, election, config, choices, onVote, onClose
     cardRef.current?.style.setProperty('--portal-tilt-x', '0deg');
     cardRef.current?.style.setProperty('--portal-tilt-y', '0deg');
   };
-  const photo = google?.photos?.[0]?.src || venue.images[0];
+  const photo = venue.preferLocalPhoto ? venue.images[0] : (google?.photos?.[0]?.src || venue.images[0]);
 
   return <div className={`experience-portal experience-portal--${category}`} role="dialog" aria-modal="true" aria-label={`Explorar ${isBars ? 'bares' : 'hamburguerias'}`} style={{ '--portal-accent': venue.accent }}>
     <div className="experience-portal__scroll" ref={scrollRef} tabIndex={-1}>
