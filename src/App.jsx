@@ -468,7 +468,7 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
       confirmedRef.current = true;
       setConfirmed(true);
       playBallotSound(audioRef.current);
-      window.setTimeout(() => onComplete(venue, payload.results, payload.round, slot), 2700);
+      window.setTimeout(() => onComplete(venue, payload.results, payload.round, slot), 4000);
     } catch (e) { setError(e.message); }
     finally { setSending(false); }
   }
