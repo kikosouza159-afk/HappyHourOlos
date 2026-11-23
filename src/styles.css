@@ -394,3 +394,21 @@ html, body { max-width:100%; overflow-x:clip; }
 .journey-category-actions button{border:1px solid #ffffff45;border-radius:100px;padding:10px 18px;background:#ffffff0e;color:#fff;display:flex;align-items:center;gap:9px;font-weight:800}
 @media(max-width:630px){.journey-ballot{padding:15px}.journey-ballot b{font-size:12px}.ballot-slots>div{gap:7px}}
 @media(prefers-reduced-motion:reduce){.ballot-success,.ballot-machine,.ballot-machine__screen strong{animation:none}}
+
+/* Confirmação eleitoral em destaque, acima de todo o formulário */
+.vote-dialog:has(.ballot-success--ceremony){overflow:visible;border-color:#c6fa6b80;background:#11151f;box-shadow:0 30px 120px #000e,0 0 65px #b8fa4933}
+.vote-dialog:has(.ballot-success--ceremony) .chosen-venue,
+.vote-dialog:has(.ballot-success--ceremony) .dialog-progress,
+.vote-dialog:has(.ballot-success--ceremony) .dialog-note,
+.vote-dialog:has(.ballot-success--ceremony) .dialog-eyebrow,
+.vote-dialog:has(.ballot-success--ceremony) h2 {display:none}
+.ballot-success--ceremony{position:relative;min-height:min(76dvh,590px);justify-content:center;overflow:hidden;border-radius:20px;background:radial-gradient(circle at 50% 43%,#264d3c 0%,#141a24 55%,#10121c 100%);padding:30px 18px;isolation:isolate;animation:ballot-appear .2s ease both}
+.ballot-success__glow{position:absolute;z-index:-1;width:350px;height:350px;top:9%;left:50%;transform:translateX(-50%);border-radius:50%;background:#aaff6a2e;filter:blur(42px);animation:ballot-glow 1.2s ease-in-out infinite alternate}
+.ballot-success--ceremony .ballot-machine{width:min(260px,72vw);border-width:11px;padding:15px;transform-origin:50% 100%;animation:ballot-rise 1.1s cubic-bezier(.16,1,.3,1) both}
+.ballot-success--ceremony .ballot-machine__screen{min-height:165px}
+.ballot-success--ceremony .ballot-success__title{font-size:clamp(25px,5vw,39px);margin-top:18px;animation:ballot-text-in .5s 1s both}
+.ballot-success--ceremony>span{font-size:14px;animation:ballot-text-in .5s 1.2s both}
+@keyframes ballot-glow{to{opacity:.35;transform:translateX(-50%) scale(1.3)}}
+@keyframes ballot-text-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:630px){.vote-dialog:has(.ballot-success--ceremony){padding:12px}.ballot-success--ceremony{min-height:min(75dvh,570px)}}
+@media(prefers-reduced-motion:reduce){.ballot-success--ceremony,.ballot-success--ceremony .ballot-machine,.ballot-success--ceremony .ballot-success__title,.ballot-success--ceremony>span,.ballot-success__glow{animation:none}}
