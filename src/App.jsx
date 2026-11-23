@@ -264,7 +264,7 @@ function ExperiencePortal({ category, election, config, choices, onVote, onClose
   const otherCategory = isBars ? 'burgers' : 'bars';
   const otherLabel = isBars ? 'Hamburguerias' : 'Bares';
   const canVote = election.phase === 'open' && venue.enabled;
-  const selected = choices[category] === venue.id;
+  const selected = choices.first === venue.id || choices.second === venue.id;
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -385,7 +385,7 @@ function ExperiencePortal({ category, election, config, choices, onVote, onClose
                 <div className="experience-portal__tags">{venue.details.map(tag => <span key={tag}>{tag}</span>)}</div>
                 {venue.notice && <p className="experience-portal__notice"><CircleAlert size={15}/>{venue.notice}</p>}
                 <div className="experience-portal__aside-actions"><button className="experience-portal__vote" type="button" onClick={() => onVote(venue)} disabled={!canVote}><Vote size={18}/>{!venue.enabled ? 'INDISPONÍVEL' : election.phase !== 'open' ? 'VOTAÇÃO ENCERRADA' : selected ? 'ALTERAR MEU VOTO' : 'VOTAR NESTE LUGAR'}<ArrowUpRight size={17}/></button><button className="experience-portal__maps" onClick={() => setLocationOpen(true)} type="button"><Images size={17}/> Ver fotos e localização <ChevronRight size={17}/></button></div>
-                <div className="experience-portal__step-note">{choices[category] ? <><Check size={15}/> Seu voto neste segmento foi registrado.</> : <>São dois votos: um em cada segmento.</>}</div>
+                <div className="experience-portal__step-note">{selected ? <><Check size={15}/> Este local está na sua cédula.</> : <>Escolha dois locais diferentes, de qualquer categoria.</>}</div>
               </aside>
             </div>
             <footer className="experience-portal__footer">
@@ -402,55 +402,89 @@ function ExperiencePortal({ category, election, config, choices, onVote, onClose
   </div>;
 }
 
+function playBallotSound(context) {
+  if (!context) return;
+  const start = context.currentTime + .06;
+  // Sequência curta sintetizada, inspirada no sinal de confirmação de uma urna.
+  [880, 1100, 1320].forEach((frequency, index) => {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const time = start + index * .16;
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, time);
+    gain.gain.setValueAtTime(.0001, time);
+    gain.gain.exponentialRampToValueAtTime(.13, time + .015);
+    gain.gain.exponentialRampToValueAtTime(.0001, time + .13);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(time);
+    oscillator.stop(time + .15);
+  });
+}
+
 function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
   const [email, setEmail] = useState(() => localStorage.getItem('afterhours-email') || '');
   const [name, setName] = useState(() => localStorage.getItem('afterhours-name') || '');
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [slot, setSlot] = useState(() => progress.first === venue?.id ? 1 : progress.second === venue?.id ? 2 : !progress.first ? 1 : 2);
+  const audioRef = useRef(null);
   const [error, setError] = useState('');
   useEffect(() => {
     if (!venue) return;
     setError('');
+    setConfirmed(false);
+    setSlot(progress.first === venue.id ? 1 : progress.second === venue.id ? 2 : !progress.first ? 1 : 2);
     const onEsc = e => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onEsc);
     const oldOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onEsc); document.body.style.overflow = oldOverflow; };
+    return () => { document.removeEventListener('keydown', onEsc); document.body.style.overflow = oldOverflow; audioRef.current?.close?.().catch(() => {}); };
   }, [venue, onClose]);
   if (!venue) return null;
   async function submit(event) {
     event.preventDefault(); setError('');
+    if (confirmed) return;
+    if ((slot === 1 ? progress.second : progress.first) === venue.id) { setError('Este local já está no outro voto.'); return; }
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass && !audioRef.current) { try { audioRef.current = new AudioContextClass(); audioRef.current.resume().catch(() => {}); } catch { /* som opcional */ } }
     if (name.trim().length < 2) { setError('Informe seu primeiro nome.'); return; }
     setSending(true);
     try {
       const response = await fetch('/api/votes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: venue.category, venueId: venue.id, name: name.trim(), email, accessCode: code })
+        body: JSON.stringify({ category: venue.category, venueId: venue.id, slot, name: name.trim(), email, accessCode: code })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Não foi possível registrar o voto.');
       localStorage.setItem('afterhours-email', email.trim());
       localStorage.setItem('afterhours-name', name.trim());
-      localStorage.setItem(`afterhours-choice-r${payload.round}-${venue.category}`, venue.id);
-      onComplete(venue, payload.results, payload.round);
+      localStorage.setItem(`afterhours-choice-r${payload.round}-slot${slot}`, venue.id);
+      setConfirmed(true);
+      playBallotSound(audioRef.current);
+      window.setTimeout(() => onComplete(venue, payload.results, payload.round, slot), 2700);
     } catch (e) { setError(e.message); }
     finally { setSending(false); }
   }
   return <div className="dialog-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
     <div className="vote-dialog" role="dialog" aria-modal="true" aria-labelledby="vote-dialog-title">
-      <button className="dialog-close" aria-label="Fechar" onClick={onClose}><X size={22}/></button>
+      {!confirmed && <button className="dialog-close" aria-label="Fechar" onClick={onClose}><X size={22}/></button>}
       <div className="dialog-eyebrow"><span className="live-dot"/> {election.round}º TURNO · SUA ESCOLHA</div>
       <h2 id="vote-dialog-title">Seu voto.<br/><em>Seu rolê.</em></h2>
       <div className="chosen-venue"><VenueImg src={venue.images[0]} fallback={venue.images[1]} alt={venue.name}/><div><span>{venue.category === 'bars' ? 'BAR' : 'HAMBURGUERIA'} SELECIONADO</span><strong>{venue.name}</strong><small><MapPin size={12}/>{venue.neighborhood}</small></div><Check size={22}/></div>
-      <div className="dialog-progress"><span>{election.round === 1 ? 'PRIMEIRO TURNO · 2 SEGMENTOS OBRIGATÓRIOS' : 'GRANDE FINAL · NOVO VOTO NOS DOIS SEGMENTOS'}</span><div><span className={progress.bars ? 'is-complete' : ''}>01 BAR {progress.bars ? '✓' : ''}</span><span className={progress.burgers ? 'is-complete' : ''}>02 HAMBURGUERIA {progress.burgers ? '✓' : ''}</span></div></div>
-      <form onSubmit={submit} className="vote-form">
+      <div className="dialog-progress"><span>DOIS VOTOS OBRIGATÓRIOS · CATEGORIAS LIVRES</span><div><span className={progress.first ? 'is-complete' : ''}>01 VOTO {progress.first ? '✓' : ''}</span><span className={progress.second ? 'is-complete' : ''}>02 VOTO {progress.second ? '✓' : ''}</span></div></div>
+      {confirmed ? <div className="ballot-success" role="status" aria-live="polite">
+        <div className="ballot-machine"><div className="ballot-machine__screen"><span>JUSTIÇA DO HAPPY HOUR</span><Vote size={55}/><strong>FIM</strong><small>VOTO {slot} CONFIRMADO</small></div><div className="ballot-machine__keys">{Array.from({length: 12}, (_,i) => <i key={i}/>)}</div><div className="ballot-machine__confirm">CONFIRMA <Check size={18}/></div></div>
+        <strong className="ballot-success__title">VOTO CONFIRMADO!</strong><span>Seu voto em {venue.name} foi computado.</span>
+      </div> : <form onSubmit={submit} className="vote-form">
+        <fieldset className="ballot-slots"><legend>Em qual posição deseja votar?</legend><div>{[1,2].map(number => <label key={number}><input type="radio" name="slot" checked={slot === number} onChange={() => setSlot(number)}/><span>VOTO {number}<small>{progress[number === 1 ? 'first' : 'second'] ? 'Substituir escolha' : 'Disponível'}</small></span></label>)}</div></fieldset>
         <label>Seu nome<input autoFocus value={name} onChange={e => setName(e.target.value)} type="text" maxLength={60} placeholder="Como podemos te chamar?" required /></label>
         <label>Seu e-mail<input value={email} onChange={e => setEmail(e.target.value)} type="email" maxLength={150} placeholder="voce@empresa.com" required /></label>
         {config.requiresAccessCode && <label>Código do time<input value={code} onChange={e => setCode(e.target.value)} type="password" maxLength={80} placeholder="Código compartilhado com o time" required /></label>}
         {error && <p className="form-error" role="alert"><CircleAlert size={15}/>{error}</p>}
         <button className="button button--lime button--submit" type="submit" disabled={sending || election.phase !== 'open'}>{sending ? 'Registrando...' : `Confirmar voto · ${election.round}º turno`}<ArrowUpRight size={18}/></button>
-      </form>
-      <p className="dialog-note">Use sempre o mesmo e-mail nos dois segmentos e nos dois turnos. O primeiro turno permanece salvo separadamente. A votação utiliza hash do e-mail, sem confirmação de posse.</p>
+      </form>}
+      <p className="dialog-note">Cada participante precisa registrar dois votos em locais diferentes, sejam bares ou hamburguerias. Use o mesmo e-mail em ambos e na final.</p>
     </div>
   </div>;
 }
@@ -466,7 +500,7 @@ function ResultsPanel({ category, items, results, onVote, chosen }) {
       const count = results?.counts?.[venue.id] || 0;
       const pct = total ? Math.round(count / total * 100) : 0;
       return <div key={venue.id} className={`result-row ${!venue.enabled ? 'result-row--disabled' : ''}`}>
-        <div className="result-row__top"><div className="result-row__name"><span className="result-position">{String(idx + 1).padStart(2, '0')}</span><span>{venue.name}</span>{chosen === venue.id ? <small>SEU VOTO</small> : !venue.enabled ? <small>Indisponível</small> : null}</div><span className="result-row__pct">{pct}% <small>({count})</small></span></div>
+        <div className="result-row__top"><div className="result-row__name"><span className="result-position">{String(idx + 1).padStart(2, '0')}</span><span>{venue.name}</span>{chosen?.includes(venue.id) ? <small>SEU VOTO</small> : !venue.enabled ? <small>Indisponível</small> : null}</div><span className="result-row__pct">{pct}% <small>({count})</small></span></div>
         <div className="result-track"><div style={{ width: `${pct}%` }}/></div>
       </div>;
     })}</div>
@@ -476,10 +510,16 @@ function ResultsPanel({ category, items, results, onVote, chosen }) {
 }
 
 function VotingJourney({ results, progress, onNavigate }) {
-  const done = Number(Boolean(progress.bars)) + Number(Boolean(progress.burgers));
-  return <section className="vote-journey" aria-label="Etapas do seu voto"><div className="vote-journey__label"><span className="live-dot"/> SUA MISSÃO · {results.round === 2 ? 'GRANDE FINAL' : 'PRIMEIRO TURNO'} <strong>{done}/2 CONCLUÍDOS</strong></div>
-    <div className="vote-journey__grid"><button type="button" onClick={() => onNavigate('bares')} className={progress.bars ? 'is-complete' : ''}><span className="journey-number">01</span><span><b>{progress.bars ? 'BAR ESCOLHIDO' : 'ESCOLHA UM BAR'}</b><small>{progress.bars ? 'Voto registrado. Pode alterar.' : 'Karaokê, sinuca, rock e mais'}</small></span>{progress.bars ? <Check/> : <ArrowUpRight/>}</button><span className="journey-connector">+</span><button type="button" onClick={() => onNavigate('burgers')} className={progress.burgers ? 'is-complete' : ''}><span className="journey-number">02</span><span><b>{progress.burgers ? 'HAMBURGUERIA ESCOLHIDA' : 'ESCOLHA UMA HAMBURGUERIA'}</b><small>{progress.burgers ? 'Voto registrado. Pode alterar.' : 'Rodízios, mini burgers e BBQ'}</small></span>{progress.burgers ? <Check/> : <ArrowUpRight/>}</button></div>
-    <p>{done === 2 ? results.round === 1 ? 'Perfeito! Seus dois votos estão registrados. Agora é aguardar a abertura do segundo turno.' : 'Missão completa! Seus dois votos da grande final estão registrados.' : 'É preciso escolher um lugar de cada segmento. O placar é separado e você pode alterar seu voto.'}</p>
+  const done = Number(Boolean(progress.first)) + Number(Boolean(progress.second));
+  return <section className="vote-journey" aria-label="Etapas do seu voto">
+    <div className="vote-journey__label"><span className="live-dot"/> SUA MISSÃO · {results.round === 2 ? 'GRANDE FINAL' : 'PRIMEIRO TURNO'} <strong>{done}/2 CONCLUÍDOS</strong></div>
+    <div className="vote-journey__grid">
+      {[1,2].map(number => <div key={number} className={`journey-ballot ${progress[number === 1 ? 'first' : 'second'] ? 'is-complete' : ''}`}>
+        <span className="journey-number">0{number}</span><span><b>{progress[number === 1 ? 'first' : 'second'] ? 'VOTO REGISTRADO' : `FALTA O VOTO ${number}`}</b><small>{progress[number === 1 ? 'first' : 'second'] ? 'Você pode substituir essa escolha.' : 'Pode ser bar ou hamburgueria.'}</small></span>{progress[number === 1 ? 'first' : 'second'] ? <Check/> : <Vote/>}
+      </div>)}
+    </div>
+    <div className="journey-category-actions"><button onClick={() => onNavigate('bares')}>Explorar bares <ArrowUpRight size={16}/></button><button onClick={() => onNavigate('burgers')}>Explorar hamburguerias <ArrowUpRight size={16}/></button></div>
+    <p>{done === 2 ? 'Seus dois votos estão registrados. Obrigado por participar!' : 'Para concluir sua participação, registre dois votos em locais diferentes. Não é obrigatório votar nas duas categorias.'}</p>
   </section>;
 }
 
@@ -522,7 +562,7 @@ export default function App() {
   const [selectedVenue, setSelectedVenue] = useState(null);
   const [experienceCategory, setExperienceCategory] = useState(null);
   const lastFocusedRef = useRef(null);
-  const [choices, setChoices] = useState({ bars: null, burgers: null });
+  const [choices, setChoices] = useState({ first: null, second: null });
   const [toast, setToast] = useState(null);
   const [menu, setMenu] = useState(false);
   const refreshResults = useCallback(async () => {
@@ -540,8 +580,8 @@ export default function App() {
   useEffect(() => {
     const round = results.round || 1;
     setChoices({
-      bars: localStorage.getItem(`afterhours-choice-r${round}-bars`),
-      burgers: localStorage.getItem(`afterhours-choice-r${round}-burgers`)
+      first: localStorage.getItem(`afterhours-choice-r${round}-slot1`) || localStorage.getItem(`afterhours-choice-r${round}-bars`),
+      second: localStorage.getItem(`afterhours-choice-r${round}-slot2`) || localStorage.getItem(`afterhours-choice-r${round}-burgers`)
     });
   }, [results.round]);
   useEffect(() => {
@@ -586,24 +626,23 @@ export default function App() {
     }
     setSelectedVenue(venue);
   };
-  const done = (venue, updated, round) => {
+  const done = (venue, updated, round, slot) => {
     if (updated) setResults(updated);
     setSelectedVenue(null);
-    const next = { ...choices, [venue.category]: venue.id };
+    const next = { ...choices, [slot === 1 ? 'first' : 'second']: venue.id };
     setChoices(next);
-    const other = venue.category === 'bars' ? 'burgers' : 'bars';
-    setToast(next[other] ? `Seu voto em ${venue.name} foi salvo! Os dois segmentos do ${round}º turno estão completos.` : `Voto em ${venue.name} registrado! Falta escolher ${other === 'bars' ? 'um bar' : 'uma hamburgueria'}.`);
+    setToast(next.first && next.second ? 'Votação concluída! Seus dois votos foram confirmados.' : `Voto ${slot} confirmado! Registre também o outro voto.`);
   };
   const share = async () => {
     const url = window.location.href.split('#')[0];
     try {
-      if (navigator.share) await navigator.share({ title: 'AFTERHOURS · A escolha é sua', text: 'Vote em um bar e uma hamburgueria para a nossa confraternização!', url });
+      if (navigator.share) await navigator.share({ title: 'AFTERHOURS · A escolha é sua', text: 'Escolha dois locais para a nossa confraternização!', url });
       else if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(url); setToast('Link copiado! Compartilhe no grupo do time.'); }
       else window.prompt('Copie o link da votação:', url);
     } catch (error) { if (error.name !== 'AbortError') setToast('Não foi possível compartilhar. Copie o endereço do site.'); }
   };
   const totalVotes = (results.totals.bars || 0) + (results.totals.burgers || 0);
-  const complete = Number(Boolean(choices.bars)) + Number(Boolean(choices.burgers));
+  const complete = Number(Boolean(choices.first)) + Number(Boolean(choices.second));
   return <div className="site">
     <header className="site-header"><div className="site-header__inner"><Brand/><nav className={`site-nav ${menu ? 'site-nav--open' : ''}`} aria-label="Navegação principal">
       <a href="#conceito" onClick={() => setMenu(false)}>A experiência</a><button type="button" onClick={() => openExperience('bars')}>Bares</button><button type="button" onClick={() => openExperience('burgers')}>Hamburguerias</button><a href="#resultados" onClick={() => setMenu(false)}>Placar</a>
@@ -613,7 +652,7 @@ export default function App() {
       <section className="hero" id="inicio"><div className="hero-glow hero-glow--one"/><div className="hero-glow hero-glow--two"/><HeroScene/>
         <div className="hero-inner"><div className="hero-copy"><div className="hero-meta"><span className="live-dot"/> {results.round === 2 ? 'A GRANDE FINAL COMEÇOU' : 'O PRÓXIMO ROLÊ COMEÇA AQUI'} <span className="meta-line"/></div>
           <h1>O rolê é<br/><span className="hero-title-outline">nosso.</span><br/>A escolha <em>é sua.</em></h1>
-          <p>{results.round === 2 ? 'O primeiro turno escolheu os finalistas. Agora são dois confrontos: um bar e uma hamburgueria. Seu voto define o destino.' : `${venueData.length} lugares. 2 universos. 2 votos por pessoa. Explore cada ambiente em 3D, escolha um bar e uma hamburgueria, e prepare-se para a grande final.`}</p>
+          <p>{results.round === 2 ? 'O primeiro turno escolheu os finalistas. Agora você tem dois votos livres entre os finalistas. Seu voto define o destino.' : `${venueData.length} lugares. 2 universos. 2 votos por pessoa. Explore cada ambiente em 3D, vote em dois locais diferentes, sejam bares ou hamburguerias, e prepare-se para a grande final.`}</p>
           <div className="hero-actions"><a className="button button--lime button--big" href="#conceito">Explorar experiências <ArrowDownRight size={21}/></a><a className="hero-link" href="#resultados"><BarChart3 size={18}/> Acompanhar placar</a><button className="hero-link hero-share" onClick={share}><Share2 size={18}/> Compartilhar</button></div>
           <div className="hero-kpis"><div><strong>{results.round === 2 ? '04' : '10'}</strong><span>DESTINOS</span></div><div><strong>02</strong><span>VOTOS POR TURNO</span></div><div><strong>{String(totalVotes).padStart(2, '0')}</strong><span>VOTOS NO TURNO</span></div></div>
         </div><div className="hero-side-caption"><span>AFTERHOURS / 2026</span><span>O UNIVERSO DA SUA ESCOLHA</span></div></div>
@@ -623,17 +662,17 @@ export default function App() {
       {config.persistence === 'local-demo' && <div className="demo-notice"><CircleAlert size={18}/><span><b>Modo demonstração:</b> sem PostgreSQL os votos podem desaparecer ao reiniciar o servidor. Configure <code>DATABASE_URL</code>.</span></div>}
       {config.persistence === 'offline' && <div className="demo-notice"><CircleAlert size={18}/>Servidor de votação desconectado. Confirme que o backend está em execução.</div>}
 
-      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// EXPERIÊNCIA DE VOTAÇÃO · {results.round}º TURNO</span><div className="intro-title-row"><h2>ESCOLHA A SUA <em>EXPERIÊNCIA.</em></h2><p>Clique em um universo para abrir o portal em tela cheia. Role dentro da experiência, explore os ambientes e vote em um lugar por categoria.</p></div></div>
+      <section id="conceito" className="intro-section"><div className="intro-heading reveal"><span className="section-kicker">/// EXPERIÊNCIA DE VOTAÇÃO · {results.round}º TURNO</span><div className="intro-title-row"><h2>ESCOLHA A SUA <em>EXPERIÊNCIA.</em></h2><p>Clique em um universo para abrir o portal em tela cheia. Role dentro da experiência, explore os ambientes e vote em dois locais diferentes de qualquer categoria.</p></div></div>
         <div className="category-grid"><span className="category-join" aria-hidden="true">+</span><button type="button" onClick={() => openExperience('bars')} className="category-card category-card--bars reveal" aria-label="Explorar bares em uma experiência interativa"><span className="category-card__photo"><VenueImg src={bars[0].images[0]} fallback={bars[0].images[1]} alt=""/></span><span className="category-card__orb category-card__orb--purple"/><div className="category-card__top"><span>SEGMENTO / 01</span><Music2 size={24}/></div><div className="category-card__bottom"><span>🎤 &nbsp; KARAOKÊ · SINUCA · ROCK</span><h3>NOITE<br/>LÁ FORA.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : `${bars.length} BARES`} · ENTRAR NO PORTAL <ArrowUpRight size={22}/></span></div></button>
         <button type="button" onClick={() => openExperience('burgers')} className="category-card category-card--burgers reveal" aria-label="Explorar hamburguerias em uma experiência interativa"><span className="category-card__photo"><VenueImg src={burgers[0].images[0]} fallback={burgers[0].images[1]} alt=""/></span><span className="category-card__orb category-card__orb--orange"/><div className="category-card__top"><span>SEGMENTO / 02</span><UtensilsCrossed size={24}/></div><div className="category-card__bottom"><span>🍔 &nbsp; MINI BURGERS · RODÍZIO · BBQ</span><h3>FOME DE<br/>ROLÊ.</h3><span className="category-card__footer">{results.round === 2 ? '2 FINALISTAS' : `${burgers.length} HAMBURGUERIAS`} · ENTRAR NO PORTAL <ArrowUpRight size={22}/></span></div></button></div>
-        <div className="intro-bottom"><span><Sparkles size={15}/> ROLE, EXPLORE, VOTE · DOIS SEGMENTOS OBRIGATÓRIOS</span><span>FOTOS · MAPAS · VOTAÇÃO · 3D</span></div>
+        <div className="intro-bottom"><span><Sparkles size={15}/> ROLE, EXPLORE, VOTE · DUAS ESCOLHAS OBRIGATÓRIAS</span><span>FOTOS · MAPAS · VOTAÇÃO · 3D</span></div>
       </section>
 
       <div id="votacao"><VotingJourney results={results} progress={choices} onNavigate={navigate}/></div>
 
-      <section id="resultados" className="results-section"><div className="results-wrap"><div className="results-heading reveal"><div><span className="section-kicker">/// {results.round === 2 ? 'GRANDE FINAL · 2º TURNO' : 'PRIMEIRO TURNO · 10 DESTINOS'}</span><h2>O PLACAR<br/><em>DA GALERA.</em></h2></div><div className="results-head-right"><span className="results-live"><span className="live-dot"/> ATUALIZA A CADA 15 SEGUNDOS</span><p>{results.phase === 'closed' ? 'A votação foi encerrada. Confira os vencedores.' : results.round === 2 ? 'Os dois mais votados de cada segmento disputam a final. Os votos antigos continuam arquivados.' : 'Escolha um bar e uma hamburgueria. A organização abrirá o 2º turno com os dois primeiros de cada segmento.'}</p></div></div>
-        <div className="result-grid"><ResultsPanel category="bars" items={bars} results={results} onVote={openVote} chosen={choices.bars}/><ResultsPanel category="burgers" items={burgers} results={results} onVote={openVote} chosen={choices.burgers}/></div>
-        <div className="results-footer"><span><Check size={17}/> Um voto por e-mail em cada segmento e em cada turno.</span><span>{totalVotes} VOTOS NO {results.round}º TURNO</span></div>
+      <section id="resultados" className="results-section"><div className="results-wrap"><div className="results-heading reveal"><div><span className="section-kicker">/// {results.round === 2 ? 'GRANDE FINAL · 2º TURNO' : 'PRIMEIRO TURNO · 10 DESTINOS'}</span><h2>O PLACAR<br/><em>DA GALERA.</em></h2></div><div className="results-head-right"><span className="results-live"><span className="live-dot"/> ATUALIZA A CADA 15 SEGUNDOS</span><p>{results.phase === 'closed' ? 'A votação foi encerrada. Confira os vencedores.' : results.round === 2 ? 'Os dois mais votados de cada segmento disputam a final. Os votos antigos continuam arquivados.' : 'Escolha dois locais diferentes, de qualquer categoria. A organização abrirá o 2º turno com os dois primeiros de cada segmento.'}</p></div></div>
+        <div className="result-grid"><ResultsPanel category="bars" items={bars} results={results} onVote={openVote} chosen={[choices.first, choices.second]}/><ResultsPanel category="burgers" items={burgers} results={results} onVote={openVote} chosen={[choices.first, choices.second]}/></div>
+        <div className="results-footer"><span><Check size={17}/> Dois votos por e-mail, em locais diferentes, por turno.</span><span>{totalVotes} VOTOS NO {results.round}º TURNO</span></div>
       </div></section>
 
       <AdminPanel results={results} config={config} onRefresh={refreshResults} onToast={setToast}/>
