@@ -439,8 +439,9 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
     document.addEventListener('keydown', onEsc);
     const oldOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onEsc); document.body.style.overflow = oldOverflow; audioRef.current?.close?.().catch(() => {}); };
+    return () => { document.removeEventListener('keydown', onEsc); document.body.style.overflow = oldOverflow; };
   }, [venue, onClose, confirmed]);
+  useEffect(() => () => { audioRef.current?.close?.().catch(() => {}); }, []);
   if (!venue) return null;
   async function submit(event) {
     event.preventDefault(); setError('');
