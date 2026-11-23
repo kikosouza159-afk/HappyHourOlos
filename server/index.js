@@ -23,7 +23,6 @@ app.use((_req, res, next) => {
 const port = Number(process.env.PORT || 4000);
 const databaseUrl = process.env.DATABASE_URL?.trim();
 const secret = process.env.VOTE_SECRET || 'development-only-not-for-production';
-const accessCode = process.env.VOTE_ACCESS_CODE?.trim() || '';
 const adminKey = process.env.VOTE_ADMIN_KEY?.trim() || '';
 const googleKey = process.env.GOOGLE_MAPS_API_KEY?.trim() || '';
 const localDir = path.join(root, '.local-data');
@@ -119,7 +118,10 @@ async function setupStorage() {
   if (!adminKey) note('Segundo turno: configure VOTE_ADMIN_KEY no Render para liberar o painel do organizador.');
 }
 
-const hashEmail = email => crypto.createHmac('sha256', secret).update(email.trim().toLowerCase()).digest('hex');
+// Voting is intentionally informal: normalized names identify the two ballot slots.
+// Names alone cannot establish identity; two colleagues with identical names share slots.
+const normalizeVoterName = name => name.trim().normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
+const hashVoterName = name => crypto.createHmac('sha256', secret).update('name:' + normalizeVoterName(name)).digest('hex');
 function safeEqual(actual, expected) {
   const a = Buffer.from(actual), b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -179,7 +181,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'afterhours'
 app.get('/api/config', (_req, res) => res.json({
   persistence: databaseMode,
   googlePhotosEnabled: Boolean(googleKey),
-  requiresAccessCode: Boolean(accessCode),
+  requiresAccessCode: false,
   adminEnabled: Boolean(adminKey),
   eventName: 'AFTERHOURS 2026'
 }));
@@ -190,12 +192,9 @@ app.get('/api/results', async (_req, res, next) => {
 app.post('/api/votes', throttle, async (req, res, next) => {
   try {
     const { category, venueId, slot } = req.body || {};
-    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    if (!/^[^\s@]{2,80}@[^\s@]+\.[^\s@]{2,30}$/.test(email) || email.length > 150) {
-      return res.status(400).json({ error: 'Informe um e-mail válido para registrar o voto.' });
-    }
-    if (accessCode && !safeEqual(String(req.body.accessCode || ''), accessCode)) {
-      return res.status(403).json({ error: 'Código de acesso do time incorreto.' });
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().replace(/\s+/g, ' ') : '';
+    if (name.length < 2 || name.length > 60 || !/[\p{L}]/u.test(name)) {
+      return res.status(400).json({ error: 'Informe seu nome para registrar o voto (2 a 60 caracteres).' });
     }
     if (slot !== 1 && slot !== 2) return res.status(400).json({ error: 'Escolha o voto 1 ou 2.' });
     const selected = venueMap.get(venueId);
@@ -208,9 +207,9 @@ app.post('/api/votes', throttle, async (req, res, next) => {
     if (!eligibleForRound(selected, election)) {
       return res.status(400).json({ error: 'Somente os dois finalistas participam do segundo turno.' });
     }
-    const voterHash = hashEmail(email);
+    const voterHash = hashVoterName(name);
     if (election.round === 2 && !await votedBothInFirstRound(voterHash)) {
-      return res.status(403).json({ error: 'Para votar na final, registre seus dois votos no primeiro turno com este e-mail.' });
+      return res.status(403).json({ error: 'Para votar na final, registre seus dois votos no primeiro turno com este nome.' });
     }
     if (pool) {
       const { rows } = await pool.query(
