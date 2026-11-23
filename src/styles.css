@@ -363,3 +363,34 @@ html, body { max-width:100%; overflow-x:clip; }
 @media(max-width:580px){.experience-portal__identity{font-size:9px;gap:6px;letter-spacing:.08em}.experience-portal__header-divider{display:none}.experience-portal__close{padding:8px;border-radius:50%}.experience-portal__close span{display:none}.experience-portal__heading h2{font-size:19px;line-height:1.13}.experience-portal__heading h2 em{display:block}.experience-portal__chapter{font-size:31px}.experience-portal__card-top{top:19px;left:19px;right:19px;font-size:8px}.experience-portal__card-top button{font-size:9px;padding:8px}.experience-portal__card-bottom{left:23px;right:17px;bottom:92px}.experience-portal__card-bottom>span{font-size:9px}.experience-portal__card-bottom h3{font-size:clamp(34px,9.2vw,57px)}.experience-portal__card-bottom p{font-size:12px}.experience-portal__mobile-vote{font-size:10px;padding:12px 13px}.experience-portal__footer{gap:8px}.experience-portal__switch{font-size:0;display:flex;padding:7px}.experience-portal__switch svg{width:22px;height:22px}.experience-portal__identity{white-space:normal}.experience-portal__frame{inset:8px}.experience-portal__step-note{display:none}}
 @media(max-height:690px) and (min-width:901px){.experience-portal__content{padding:11px 24px}.experience-portal__heading{padding:10px 0}.experience-portal__heading h2{font-size:22px}.experience-portal__layout{padding-bottom:8px}.experience-portal__aside{gap:5px}.experience-portal__aside-lede{line-height:1.4;font-size:12px}.experience-portal__tags span{font-size:9px;padding:5px 8px}.experience-portal__card-bottom h3{font-size:clamp(43px,5vw,70px)}.experience-portal__footer{padding-top:7px}}
 @media(prefers-reduced-motion:reduce){.experience-portal{animation:none}.experience-portal__ambient img,.experience-portal__photo{animation:none!important}.experience-portal__card{transform:none!important;transition:none!important}}
+
+
+/* Urna eletrônica: confirmação visual após persistência do voto */
+.ballot-slots{border:0;padding:0;margin:0}.ballot-slots legend{font-size:12px;font-weight:800;margin-bottom:9px;color:#e5e5ed}
+.ballot-slots>div{display:grid;grid-template-columns:1fr 1fr;gap:10px}.ballot-slots label{display:block;cursor:pointer}
+.ballot-slots input{position:absolute;opacity:0;width:1px;height:1px}
+.ballot-slots label>span{display:flex;flex-direction:column;gap:4px;padding:13px;border:1px solid #505263;border-radius:12px;background:#222433;font-size:13px;font-weight:900}
+.ballot-slots label small{font-size:10px;color:#aaaebe;font-weight:500}
+.ballot-slots input:checked+span{border-color:var(--lime);background:#b3f55c18}
+.ballot-slots input:focus-visible+span{outline:2px solid var(--lime);outline-offset:3px}
+.ballot-success{display:flex;flex-direction:column;align-items:center;text-align:center;gap:9px;padding:6px 0 20px;animation:ballot-appear .42s ease both}
+.ballot-machine{width:205px;padding:12px;border:9px solid #ced1d6;border-radius:12px;background:linear-gradient(135deg,#eceef0,#aeb3bb);box-shadow:0 21px 35px #0007;animation:ballot-rise .85s cubic-bezier(.19,1,.22,1) both}
+.ballot-machine__screen{background:#162823;border:5px solid #353c3b;color:#aef8ae;min-height:146px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:5px}
+.ballot-machine__screen>span{font-size:8px;letter-spacing:.1em}.ballot-machine__screen strong{font-size:38px;line-height:1;font-family:'Space Grotesk',sans-serif;animation:ballot-blink .4s steps(2) 3}
+.ballot-machine__screen small{font-size:9px;font-weight:800}
+.ballot-machine__keys{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:10px auto;width:112px}
+.ballot-machine__keys i{height:13px;background:#25282d;border-radius:2px;box-shadow:0 2px 0 #111}
+.ballot-machine__confirm{display:flex;align-items:center;justify-content:center;gap:5px;background:#30a359;color:#fff;border-radius:4px;padding:6px;font-size:9px;font-weight:900}
+.ballot-success__title{font-family:'Space Grotesk',sans-serif;font-size:26px;color:var(--lime)}
+.ballot-success>span{font-size:12px;color:#c9cad3}
+@keyframes ballot-rise{from{transform:translateY(80vh) rotate(-7deg) scale(.65);opacity:0}to{transform:translateY(0) rotate(0) scale(1);opacity:1}}
+@keyframes ballot-appear{from{opacity:0}to{opacity:1}}
+@keyframes ballot-blink{50%{opacity:.15}}
+.journey-ballot{display:flex;align-items:center;gap:20px;min-width:0;border:1px solid #ffffff37;background:#ffffff0a;padding:19px 25px;border-radius:18px}
+.journey-ballot.is-complete{border-color:#c9f7756a;background:#aaf46f16}
+.journey-ballot>span:nth-child(2){display:flex;flex:1;flex-direction:column;gap:6px}
+.journey-ballot b{font-size:15px}.journey-ballot small{color:#a5a7b9;font-size:11px}.journey-ballot>svg{color:var(--lime)}
+.journey-category-actions{max-width:1400px;margin:16px auto 0;display:flex;gap:12px;flex-wrap:wrap}
+.journey-category-actions button{border:1px solid #ffffff45;border-radius:100px;padding:10px 18px;background:#ffffff0e;color:#fff;display:flex;align-items:center;gap:9px;font-weight:800}
+@media(max-width:630px){.journey-ballot{padding:15px}.journey-ballot b{font-size:12px}.ballot-slots>div{gap:7px}}
+@media(prefers-reduced-motion:reduce){.ballot-success,.ballot-machine,.ballot-machine__screen strong{animation:none}}
