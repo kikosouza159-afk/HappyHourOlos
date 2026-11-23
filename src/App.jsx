@@ -428,17 +428,24 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
   const [slot, setSlot] = useState(() => progress.first === venue?.id ? 1 : progress.second === venue?.id ? 2 : !progress.first ? 1 : 2);
   const audioRef = useRef(null);
   const [error, setError] = useState('');
+  // A confirmação deve permanecer visível. Não reinicialize o modal quando
+  // confirmed muda ou quando o pai renderiza uma nova função onClose.
+  const onCloseRef = useRef(onClose);
+  const confirmedRef = useRef(confirmed);
+  onCloseRef.current = onClose;
+  confirmedRef.current = confirmed;
   useEffect(() => {
     if (!venue) return;
     setError('');
     setConfirmed(false);
+    confirmedRef.current = false;
     setSlot(progress.first === venue.id ? 1 : progress.second === venue.id ? 2 : !progress.first ? 1 : 2);
-    const onEsc = e => { if (e.key === 'Escape' && !confirmed) onClose(); };
+    const onEsc = e => { if (e.key === 'Escape' && !confirmedRef.current) onCloseRef.current(); };
     document.addEventListener('keydown', onEsc);
     const oldOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onEsc); document.body.style.overflow = oldOverflow; };
-  }, [venue, onClose, confirmed]);
+  }, [venue?.id]);
   useEffect(() => () => { audioRef.current?.close?.().catch(() => {}); }, []);
   if (!venue) return null;
   async function submit(event) {
@@ -458,6 +465,7 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
       if (!response.ok) throw new Error(payload.error || 'Não foi possível registrar o voto.');
       localStorage.setItem('afterhours-name', name.trim());
       localStorage.setItem(`afterhours-choice-r${payload.round}-slot${slot}`, venue.id);
+      confirmedRef.current = true;
       setConfirmed(true);
       playBallotSound(audioRef.current);
       window.setTimeout(() => onComplete(venue, payload.results, payload.round, slot), 2700);
@@ -471,7 +479,7 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
       <h2 id="vote-dialog-title">Seu voto.<br/><em>Seu rolê.</em></h2>
       <div className="chosen-venue"><VenueImg src={venue.images[0]} fallback={venue.images[1]} alt={venue.name}/><div><span>{venue.category === 'bars' ? 'BAR' : 'HAMBURGUERIA'} SELECIONADO</span><strong>{venue.name}</strong><small><MapPin size={12}/>{venue.neighborhood}</small></div><Check size={22}/></div>
       <div className="dialog-progress"><span>DOIS VOTOS OBRIGATÓRIOS · CATEGORIAS LIVRES</span><div><span className={progress.first ? 'is-complete' : ''}>01 VOTO {progress.first ? '✓' : ''}</span><span className={progress.second ? 'is-complete' : ''}>02 VOTO {progress.second ? '✓' : ''}</span></div></div>
-      {confirmed ? <div className="ballot-success" role="status" aria-live="polite">
+      {confirmed ? <div className="ballot-success ballot-success--ceremony" role="status" aria-live="assertive"><div className="ballot-success__glow" aria-hidden="true"/>
         <div className="ballot-machine"><div className="ballot-machine__screen"><span>JUSTIÇA DO HAPPY HOUR</span><Vote size={55}/><strong>FIM</strong><small>VOTO {slot} CONFIRMADO</small></div><div className="ballot-machine__keys">{Array.from({length: 12}, (_,i) => <i key={i}/>)}</div><div className="ballot-machine__confirm">CONFIRMA <Check size={18}/></div></div>
         <strong className="ballot-success__title">VOTO CONFIRMADO!</strong><span>Seu voto em {venue.name} foi computado.</span>
       </div> : <form onSubmit={submit} className="vote-form">
