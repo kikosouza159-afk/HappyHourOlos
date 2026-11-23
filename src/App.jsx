@@ -435,12 +435,12 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
     setError('');
     setConfirmed(false);
     setSlot(progress.first === venue.id ? 1 : progress.second === venue.id ? 2 : !progress.first ? 1 : 2);
-    const onEsc = e => { if (e.key === 'Escape') onClose(); };
+    const onEsc = e => { if (e.key === 'Escape' && !confirmed) onClose(); };
     document.addEventListener('keydown', onEsc);
     const oldOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onEsc); document.body.style.overflow = oldOverflow; audioRef.current?.close?.().catch(() => {}); };
-  }, [venue, onClose]);
+  }, [venue, onClose, confirmed]);
   if (!venue) return null;
   async function submit(event) {
     event.preventDefault(); setError('');
@@ -466,7 +466,7 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
     } catch (e) { setError(e.message); }
     finally { setSending(false); }
   }
-  return <div className="dialog-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+  return <div className="dialog-backdrop" onMouseDown={e => { if (!confirmed && e.target === e.currentTarget) onClose(); }}>
     <div className="vote-dialog" role="dialog" aria-modal="true" aria-labelledby="vote-dialog-title">
       {!confirmed && <button className="dialog-close" aria-label="Fechar" onClick={onClose}><X size={22}/></button>}
       <div className="dialog-eyebrow"><span className="live-dot"/> {election.round}º TURNO · SUA ESCOLHA</div>
