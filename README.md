@@ -48,9 +48,9 @@ Crie um banco **PostgreSQL**, por exemplo no [Neon](https://neon.tech/), e copie
 postgresql://usuario:senha@host.neon.tech/nome_do_banco?sslmode=require
 ```
 
-A aplicação cria automaticamente a tabela `afterhours_votes`. O banco guarda somente o **HMAC-SHA256 do e-mail**, a categoria e o ID do local, nunca o e-mail em texto claro ou o nome informado. Quem usa o mesmo e-mail novamente altera o voto anterior naquela categoria. Um e-mail pode votar uma vez em **cada** categoria.
+A aplicação cria automaticamente a tabela `afterhours_ballots` e preserva os votos antigos nas tabelas anteriores. Cada nome normalizado pode registrar dois votos por turno, em estabelecimentos diferentes. O nome é transformado em hash HMAC-SHA256, sem ser gravado em texto claro.
 
-**Atenção:** este mecanismo não confirma a posse do e-mail. Para uma enquete informal, combine-o com `VOTE_ACCESS_CODE` compartilhado apenas com o time. Para eleição formal ou exigência forte de um voto por pessoa, implemente confirmação de e-mail ou login corporativo.
+**Atenção:** a identificação apenas pelo nome é adequada para uma enquete informal, mas não comprova a identidade. Pessoas com nomes idênticos compartilham os mesmos dois votos; qualquer pessoa que informe o mesmo nome consegue alterar as escolhas. Votos antigos identificados por e-mail são mantidos, mas não podem ser automaticamente associados aos nomes.
 
 ## 4. Publicar no Render
 
@@ -58,7 +58,6 @@ A aplicação cria automaticamente a tabela `afterhours_votes`. O banco guarda s
 2. Configure as variáveis de ambiente no painel do serviço:
    - `DATABASE_URL`: **obrigatória para votos persistentes**.
    - `VOTE_SECRET`: segredo aleatório longo para gerar hash estável dos e-mails. O blueprint gera um automaticamente.
-   - `VOTE_ACCESS_CODE`: opcional, senha da votação compartilhada com o time.
    - `GOOGLE_MAPS_API_KEY`: opcional, veja abaixo.
 3. Confirme o deploy e abra a URL `https://afterhours-votacao.onrender.com` (ou a URL efetiva fornecida pelo Render).
 4. Compartilhe esta URL no WhatsApp do time. Cada participante escolhe um bar e uma hamburgueria.
@@ -96,12 +95,11 @@ Se for substituir um lugar, altere o objeto correspondente, mantendo o `id` se d
 | `/api/places/:id` | GET | Metadados e atribuições do Google Places |
 | `/api/places/:id/photos/:index` | GET | Redirecionamento controlado à mídia do Google |
 
-Exemplo de requisição de voto (localmente, quando `VOTE_ACCESS_CODE` estiver vazio):
 
 ```bash
 curl -X POST http://localhost:4000/api/votes \
   -H "Content-Type: application/json" \
-  -d '{"name":"Maria","email":"maria@empresa.com","category":"bars","venueId":"bar-curtica"}'
+  -d '{"name":"Maria Silva","slot":1,"category":"bars","venueId":"bar-curtica"}'
 ```
 
 ## Limitações e considerações
