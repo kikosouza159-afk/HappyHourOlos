@@ -102,6 +102,15 @@ async function setupStorage() {
     fs.mkdirSync(localDir, { recursive: true });
     for (const file of [localFile, localFinalFile]) {
       if (!fs.existsSync(file)) writeJson(file, []);
+      // Convert legacy category-specific ballots to numbered slots.
+      const votes = readJson(file, []);
+      let changed = false;
+      const normalized = votes.map(v => {
+        if (v.slot === 1 || v.slot === 2) return v;
+        changed = true;
+        return { ...v, slot: v.category === 'bars' ? 1 : 2 };
+      });
+      if (changed) writeJson(file, normalized);
     }
     if (!fs.existsSync(localElectionFile)) writeJson(localElectionFile, initialElection());
     note('ATENÇÃO: sem DATABASE_URL. Dados locais podem ser apagados no Render.');
