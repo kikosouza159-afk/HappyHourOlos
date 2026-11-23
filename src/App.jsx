@@ -422,9 +422,7 @@ function playBallotSound(context) {
 }
 
 function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
-  const [email, setEmail] = useState(() => localStorage.getItem('afterhours-email') || '');
   const [name, setName] = useState(() => localStorage.getItem('afterhours-name') || '');
-  const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [slot, setSlot] = useState(() => progress.first === venue?.id ? 1 : progress.second === venue?.id ? 2 : !progress.first ? 1 : 2);
@@ -454,11 +452,10 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
     try {
       const response = await fetch('/api/votes', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: venue.category, venueId: venue.id, slot, name: name.trim(), email, accessCode: code })
+        body: JSON.stringify({ category: venue.category, venueId: venue.id, slot, name: name.trim() })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Não foi possível registrar o voto.');
-      localStorage.setItem('afterhours-email', email.trim());
       localStorage.setItem('afterhours-name', name.trim());
       localStorage.setItem(`afterhours-choice-r${payload.round}-slot${slot}`, venue.id);
       setConfirmed(true);
@@ -480,12 +477,10 @@ function VoteModal({ venue, onClose, onComplete, config, election, progress }) {
       </div> : <form onSubmit={submit} className="vote-form">
         <fieldset className="ballot-slots"><legend>Em qual posição deseja votar?</legend><div>{[1,2].map(number => <label key={number}><input type="radio" name="slot" checked={slot === number} onChange={() => setSlot(number)}/><span>VOTO {number}<small>{progress[number === 1 ? 'first' : 'second'] ? 'Substituir escolha' : 'Disponível'}</small></span></label>)}</div></fieldset>
         <label>Seu nome<input autoFocus value={name} onChange={e => setName(e.target.value)} type="text" maxLength={60} placeholder="Como podemos te chamar?" required /></label>
-        <label>Seu e-mail<input value={email} onChange={e => setEmail(e.target.value)} type="email" maxLength={150} placeholder="voce@empresa.com" required /></label>
-        {config.requiresAccessCode && <label>Código do time<input value={code} onChange={e => setCode(e.target.value)} type="password" maxLength={80} placeholder="Código compartilhado com o time" required /></label>}
         {error && <p className="form-error" role="alert"><CircleAlert size={15}/>{error}</p>}
         <button className="button button--lime button--submit" type="submit" disabled={sending || election.phase !== 'open'}>{sending ? 'Registrando...' : `Confirmar voto · ${election.round}º turno`}<ArrowUpRight size={18}/></button>
       </form>}
-      <p className="dialog-note">Cada participante precisa registrar dois votos em locais diferentes, sejam bares ou hamburguerias. Use o mesmo e-mail em ambos e na final.</p>
+      <p className="dialog-note">Cada participante precisa registrar dois votos em locais diferentes, sejam bares ou hamburguerias. Use sempre o mesmo nome para manter suas escolhas.</p>
     </div>
   </div>;
 }
@@ -673,7 +668,7 @@ export default function App() {
 
       <section id="resultados" className="results-section"><div className="results-wrap"><div className="results-heading reveal"><div><span className="section-kicker">/// {results.round === 2 ? 'GRANDE FINAL · 2º TURNO' : 'PRIMEIRO TURNO · 10 DESTINOS'}</span><h2>O PLACAR<br/><em>DA GALERA.</em></h2></div><div className="results-head-right"><span className="results-live"><span className="live-dot"/> ATUALIZA A CADA 15 SEGUNDOS</span><p>{results.phase === 'closed' ? 'A votação foi encerrada. Confira os vencedores.' : results.round === 2 ? 'Os dois mais votados de cada segmento disputam a final. Os votos antigos continuam arquivados.' : 'Escolha dois locais diferentes, de qualquer categoria. A organização abrirá o 2º turno com os dois primeiros de cada segmento.'}</p></div></div>
         <div className="result-grid"><ResultsPanel category="bars" items={bars} results={results} onVote={openVote} chosen={[choices.first, choices.second]}/><ResultsPanel category="burgers" items={burgers} results={results} onVote={openVote} chosen={[choices.first, choices.second]}/></div>
-        <div className="results-footer"><span><Check size={17}/> Dois votos por e-mail, em locais diferentes, por turno.</span><span>{totalVotes} VOTOS NO {results.round}º TURNO</span></div>
+        <div className="results-footer"><span><Check size={17}/> Dois votos por nome, em locais diferentes, por turno.</span><span>{totalVotes} VOTOS NO {results.round}º TURNO</span></div>
       </div></section>
 
       <AdminPanel results={results} config={config} onRefresh={refreshResults} onToast={setToast}/>
