@@ -23,7 +23,6 @@ app.use((_req, res, next) => {
 const port = Number(process.env.PORT || 4000);
 const databaseUrl = process.env.DATABASE_URL?.trim();
 const secret = process.env.VOTE_SECRET || 'development-only-not-for-production';
-const accessCode = process.env.VOTE_ACCESS_CODE?.trim() || '';
 const adminKey = process.env.VOTE_ADMIN_KEY?.trim() || '';
 const googleKey = process.env.GOOGLE_MAPS_API_KEY?.trim() || '';
 const localDir = path.join(root, '.local-data');
@@ -69,6 +68,15 @@ async function setupStorage() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         PRIMARY KEY (voter_hash, category)
       );
+      CREATE TABLE IF NOT EXISTS public.afterhours_ballots (
+        voter_hash CHAR(64) NOT NULL,
+        round SMALLINT NOT NULL CHECK (round IN (1,2)),
+        slot SMALLINT NOT NULL CHECK (slot IN (1,2)),
+        venue_id VARCHAR(70) NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (voter_hash, round, slot),
+        UNIQUE (voter_hash, round, venue_id)
+      );
       CREATE TABLE IF NOT EXISTS public.afterhours_election_state (
         id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
         current_round SMALLINT NOT NULL DEFAULT 1 CHECK (current_round IN (1,2)),
@@ -79,11 +87,29 @@ async function setupStorage() {
       );
       INSERT INTO public.afterhours_election_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
     `);
-    note('PostgreSQL conectado; primeiro e segundo turnos independentes.');
+    // Import existing ballots without erasing votes from the previous version.
+    await pool.query(`
+      INSERT INTO public.afterhours_ballots (voter_hash, round, slot, venue_id, updated_at)
+      SELECT voter_hash, 1, CASE WHEN category='bars' THEN 1 ELSE 2 END, venue_id, updated_at
+      FROM public.afterhours_votes ON CONFLICT DO NOTHING;
+      INSERT INTO public.afterhours_ballots (voter_hash, round, slot, venue_id, updated_at)
+      SELECT voter_hash, 2, CASE WHEN category='bars' THEN 1 ELSE 2 END, venue_id, updated_at
+      FROM public.afterhours_final_votes ON CONFLICT DO NOTHING;
+    `);
+    note('PostgreSQL conectado; cédulas com dois votos livres por turno.');
   } else {
     fs.mkdirSync(localDir, { recursive: true });
     for (const file of [localFile, localFinalFile]) {
       if (!fs.existsSync(file)) writeJson(file, []);
+      // Convert legacy category-specific ballots to numbered slots.
+      const votes = readJson(file, []);
+      let changed = false;
+      const normalized = votes.map(v => {
+        if (v.slot === 1 || v.slot === 2) return v;
+        changed = true;
+        return { ...v, slot: v.category === 'bars' ? 1 : 2 };
+      });
+      if (changed) writeJson(file, normalized);
     }
     if (!fs.existsSync(localElectionFile)) writeJson(localElectionFile, initialElection());
     note('ATENÇÃO: sem DATABASE_URL. Dados locais podem ser apagados no Render.');
@@ -92,7 +118,10 @@ async function setupStorage() {
   if (!adminKey) note('Segundo turno: configure VOTE_ADMIN_KEY no Render para liberar o painel do organizador.');
 }
 
-const hashEmail = email => crypto.createHmac('sha256', secret).update(email.trim().toLowerCase()).digest('hex');
+// Voting is intentionally informal: normalized names identify the two ballot slots.
+// Names alone cannot establish identity; two colleagues with identical names share slots.
+const normalizeVoterName = name => name.trim().normalize('NFKC').replace(/\s+/g, ' ').toLocaleLowerCase('pt-BR');
+const hashVoterName = name => crypto.createHmac('sha256', secret).update('name:' + normalizeVoterName(name)).digest('hex');
 function safeEqual(actual, expected) {
   const a = Buffer.from(actual), b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -119,25 +148,18 @@ async function getElection() {
 async function countsForRound(round) {
   const counts = Object.fromEntries(venues.map(v => [v.id, 0]));
   const totals = { bars: 0, burgers: 0 };
-  if (pool) {
-    const table = round === 2 ? 'public.afterhours_final_votes' : 'public.afterhours_votes';
-    const { rows } = await pool.query(`SELECT category, venue_id, COUNT(*)::int AS total FROM ${table} GROUP BY category, venue_id`);
-    for (const vote of rows) {
-      if (validCategory(vote.category) && venueMap.get(vote.venue_id)?.category === vote.category) {
-        counts[vote.venue_id] = vote.total;
-        totals[vote.category] += vote.total;
-      }
-    }
-  } else {
-    const filename = round === 2 ? localFinalFile : localFile;
-    for (const vote of readJson(filename, [])) {
-      if (validCategory(vote.category) && venueMap.get(vote.venueId)?.category === vote.category) {
-        counts[vote.venueId] += 1; totals[vote.category]++;
-      }
-    }
+  const votes = pool
+    ? (await pool.query('SELECT venue_id AS "venueId" FROM public.afterhours_ballots WHERE round=$1', [round])).rows
+    : readJson(round === 2 ? localFinalFile : localFile, []);
+  for (const vote of votes) {
+    const venue = venueMap.get(vote.venueId);
+    if (!venue) continue;
+    counts[venue.id] += 1;
+    totals[venue.category] += 1;
   }
   return { counts, totals };
 }
+
 async function getResults() {
   const election = await getElection();
   const current = await countsForRound(election.round);
@@ -149,17 +171,17 @@ async function getResults() {
 }
 async function votedBothInFirstRound(voterHash) {
   if (pool) {
-    const { rows } = await pool.query('SELECT COUNT(DISTINCT category)::int AS total FROM public.afterhours_votes WHERE voter_hash = $1', [voterHash]);
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS total FROM public.afterhours_ballots WHERE voter_hash=$1 AND round=1', [voterHash]);
     return rows[0].total === 2;
   }
-  return new Set(readJson(localFile, []).filter(v => v.voterHash === voterHash).map(v => v.category)).size === 2;
+  return readJson(localFile, []).filter(v => v.voterHash === voterHash).length === 2;
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'afterhours' }));
 app.get('/api/config', (_req, res) => res.json({
   persistence: databaseMode,
   googlePhotosEnabled: Boolean(googleKey),
-  requiresAccessCode: Boolean(accessCode),
+  requiresAccessCode: false,
   adminEnabled: Boolean(adminKey),
   eventName: 'AFTERHOURS 2026'
 }));
@@ -169,14 +191,12 @@ app.get('/api/results', async (_req, res, next) => {
 });
 app.post('/api/votes', throttle, async (req, res, next) => {
   try {
-    const { category, venueId } = req.body || {};
-    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    if (!/^[^\s@]{2,80}@[^\s@]+\.[^\s@]{2,30}$/.test(email) || email.length > 150) {
-      return res.status(400).json({ error: 'Informe um e-mail válido para registrar o voto.' });
+    const { category, venueId, slot } = req.body || {};
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().replace(/\s+/g, ' ') : '';
+    if (name.length < 2 || name.length > 60 || !/[\p{L}]/u.test(name)) {
+      return res.status(400).json({ error: 'Informe seu nome para registrar o voto (2 a 60 caracteres).' });
     }
-    if (accessCode && !safeEqual(String(req.body.accessCode || ''), accessCode)) {
-      return res.status(403).json({ error: 'Código de acesso do time incorreto.' });
-    }
+    if (slot !== 1 && slot !== 2) return res.status(400).json({ error: 'Escolha o voto 1 ou 2.' });
     const selected = venueMap.get(venueId);
     if (!selected || selected.category !== category || !validCategory(category)) {
       return res.status(400).json({ error: 'Opção de voto inválida.' });
@@ -187,25 +207,37 @@ app.post('/api/votes', throttle, async (req, res, next) => {
     if (!eligibleForRound(selected, election)) {
       return res.status(400).json({ error: 'Somente os dois finalistas participam do segundo turno.' });
     }
-    const voterHash = hashEmail(email);
+    const voterHash = hashVoterName(name);
     if (election.round === 2 && !await votedBothInFirstRound(voterHash)) {
-      return res.status(403).json({ error: 'Para votar na final é necessário ter escolhido um bar e uma hamburgueria no primeiro turno usando este e-mail.' });
+      return res.status(403).json({ error: 'Para votar na final, registre seus dois votos no primeiro turno com este nome.' });
     }
     if (pool) {
-      const table = election.round === 2 ? 'public.afterhours_final_votes' : 'public.afterhours_votes';
-      await pool.query(`INSERT INTO ${table} (voter_hash, category, venue_id) VALUES ($1,$2,$3)
-        ON CONFLICT (voter_hash, category) DO UPDATE SET venue_id=EXCLUDED.venue_id, updated_at=NOW()`, [voterHash, category, venueId]);
+      const { rows } = await pool.query(
+        'SELECT slot, venue_id FROM public.afterhours_ballots WHERE voter_hash=$1 AND round=$2', [voterHash, election.round]
+      );
+      if (rows.some(v => v.venue_id === venueId && v.slot !== slot)) {
+        return res.status(409).json({ error: 'Este local já foi escolhido no outro voto. Escolha dois locais diferentes.' });
+      }
+      await pool.query(`INSERT INTO public.afterhours_ballots (voter_hash,round,slot,venue_id)
+        VALUES ($1,$2,$3,$4) ON CONFLICT (voter_hash,round,slot)
+        DO UPDATE SET venue_id=EXCLUDED.venue_id,updated_at=NOW()`, [voterHash, election.round, slot, venueId]);
     } else {
       const file = election.round === 2 ? localFinalFile : localFile;
       const votes = readJson(file, []);
-      const existing = votes.findIndex(v => v.voterHash === voterHash && v.category === category);
-      const nextVote = { voterHash, category, venueId, updatedAt: new Date().toISOString() };
+      if (votes.some(v => v.voterHash === voterHash && v.venueId === venueId && v.slot !== slot)) {
+        return res.status(409).json({ error: 'Este local já está no outro voto.' });
+      }
+      const existing = votes.findIndex(v => v.voterHash === voterHash && v.slot === slot);
+      const nextVote = { voterHash, slot, category, venueId, updatedAt: new Date().toISOString() };
       if (existing === -1) votes.push(nextVote); else votes[existing] = nextVote;
       writeJson(file, votes);
     }
-    res.json({ ok: true, round: election.round, venueId, category, results: await getResults(),
+    res.json({ ok: true, round: election.round, slot, venueId, category, results: await getResults(),
       message: `Voto do ${election.round}º turno registrado.` });
-  } catch (error) { next(error); }
+  } catch (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'Local duplicado no outro voto. Atualize e escolha outro.' });
+    next(error);
+  }
 });
 
 // Organizer-only actions: no UI key is embedded in the frontend or logged.
@@ -222,8 +254,8 @@ app.get('/api/admin/status', throttle, adminAuth, async (_req, res, next) => {
 app.post('/api/admin/advance', throttle, adminAuth, async (_req, res, next) => {
   try {
     const first = await countsForRound(1);
-    if (first.totals.bars < 1 || first.totals.burgers < 1) {
-      return res.status(409).json({ error: 'É preciso ter votos em bares e hamburguerias antes de abrir o segundo turno.' });
+    if (first.totals.bars + first.totals.burgers < 2) {
+      return res.status(409).json({ error: 'São necessários pelo menos dois votos antes de abrir o segundo turno.' });
     }
     const finalists = { bars: topTwo(venues, 'bars', first.counts), burgers: topTwo(venues, 'burgers', first.counts) };
     if (pool) {
